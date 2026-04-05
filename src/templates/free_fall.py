@@ -55,6 +55,7 @@ def build_psdl(
     dt: float = 0.01,
     space_half_extent: float = 50.0,
     validation_tolerance_pct: float = 1.0,
+    include_derived_metrics: bool = False,
     source_refs: List[Union[SourceRef, str]] | None = None,
 ) -> PSDL:
     """
@@ -80,6 +81,10 @@ def build_psdl(
         Half-width of the simulation bounding box (m).
     validation_tolerance_pct:
         Tolerance for :class:`ValidationTarget` checks (%).  Default: 1%.
+    include_derived_metrics:
+        When ``True``, append derived-metric validation targets
+        ``max_height``, ``range``, and ``time_of_flight`` to the standard
+        kinematic targets.  Default: ``False`` (preserves existing behaviour).
     source_refs:
         Provenance references.  Defaults to OpenStax + MIT OCW (both
         tier_1_authoritative).  NIST / ITU are never included by default
@@ -113,6 +118,42 @@ def build_psdl(
             dimension="velocity",
         ),
     ]
+
+    if include_derived_metrics:
+        # max_height: peak z reached (same formula as _extract_max_height in runner.py)
+        #   v0z > 0 → z0 + v0z² / (2g)   (object rises then falls)
+        #   v0z ≤ 0 → z0                  (object falls immediately)
+        max_height_exact = height + v0z ** 2 / (2.0 * g) if v0z > 0.0 else height
+
+        # range: pure vertical motion → zero horizontal displacement
+        range_exact = 0.0
+
+        # time_of_flight: total simulation duration
+        tof_exact = t
+
+        targets += [
+            ValidationTarget(
+                name="max_height",
+                expected_value=max_height_exact,
+                tolerance_pct=validation_tolerance_pct,
+                unit="m",
+                dimension="length",
+            ),
+            ValidationTarget(
+                name="range",
+                expected_value=range_exact,
+                tolerance_pct=validation_tolerance_pct,
+                unit="m",
+                dimension="length",
+            ),
+            ValidationTarget(
+                name="time_of_flight",
+                expected_value=tof_exact,
+                tolerance_pct=validation_tolerance_pct,
+                unit="s",
+                dimension="time",
+            ),
+        ]
 
     return PSDL(
         schema_version="0.1",

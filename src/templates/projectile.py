@@ -58,6 +58,7 @@ def build_psdl(
     dt: float = 0.01,
     space_half_extent: float = 100.0,
     validation_tolerance_pct: float = 1.0,
+    include_derived_metrics: bool = False,
     source_refs: List[Union[SourceRef, str]] | None = None,
 ) -> PSDL:
     """
@@ -83,6 +84,10 @@ def build_psdl(
         Half-width of the simulation bounding box (m).
     validation_tolerance_pct:
         Tolerance for :class:`ValidationTarget` checks (%).  Default: 1%.
+    include_derived_metrics:
+        When ``True``, append derived-metric validation targets
+        ``max_height``, ``range``, and ``time_of_flight`` to the standard
+        kinematic targets.  Default: ``False`` (preserves existing behaviour).
     source_refs:
         Provenance references.  Defaults to OpenStax + MIT OCW (both
         tier_1_authoritative).  NIST / ITU are never included by default.
@@ -135,6 +140,40 @@ def build_psdl(
             dimension="velocity",
         ),
     ]
+
+    if include_derived_metrics:
+        # max_height: horizontal throw has v0z = 0 → peak height = initial height
+        max_height_exact: float = height
+
+        # range: horizontal displacement x_final − x₀  (x₀ = 0)
+        range_exact: float = x_exact
+
+        # time_of_flight: total simulation duration
+        tof_exact: float = t
+
+        targets += [
+            ValidationTarget(
+                name="max_height",
+                expected_value=max_height_exact,
+                tolerance_pct=validation_tolerance_pct,
+                unit="m",
+                dimension="length",
+            ),
+            ValidationTarget(
+                name="range",
+                expected_value=range_exact,
+                tolerance_pct=validation_tolerance_pct,
+                unit="m",
+                dimension="length",
+            ),
+            ValidationTarget(
+                name="time_of_flight",
+                expected_value=tof_exact,
+                tolerance_pct=validation_tolerance_pct,
+                unit="s",
+                dimension="time",
+            ),
+        ]
 
     return PSDL(
         schema_version="0.1",

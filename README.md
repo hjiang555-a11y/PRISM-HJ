@@ -169,6 +169,7 @@ PRISM-HJ/
 │   ├── test_classifier.py            # 场景分类器
 │   ├── test_sources.py               # 来源注册表结构
 │   ├── test_validation_runner.py     # ValidationTarget 执行
+│   ├── test_validation_metrics.py    # derived metrics: max_height / range / time_of_flight
 │   ├── test_pipeline_integration.py  # 模板优先编译路径集成测试（v0.2）
 │   ├── test_source_registry_validation.py  # 来源运行时校验测试（v0.2）
 │   ├── test_projectile_template.py   # projectile 模板与解析器（v0.2）
@@ -272,6 +273,57 @@ CLI 现在始终打印 solver 路径和验证摘要：
 [Solver: pybullet]
 [Validation: no targets defined]
 ```
+
+---
+
+## Derived Validation Metrics（v0.3）
+
+`src/validation/runner` 现已支持一组更有物理意义的**导出量（derived metrics）**，当前优先服务 `free_fall` 和 `projectile`。
+
+### 支持的导出量
+
+| 目标名 | 物理含义 | 单位 | 量纲 |
+|--------|---------|------|------|
+| `max_height` | 运动过程中达到的最大高度（z 方向峰值） | `m` | `length` |
+| `range` | 净水平位移：x_final − x₀ | `m` | `length` |
+| `time_of_flight` | 总飞行时间：`dt × steps` | `s` | `time` |
+
+### 各场景定义
+
+**`free_fall`**：
+- `max_height` = `z₀ + v₀z² / (2g)`（若 v₀z > 0），否则 `= z₀`
+- `range` = `0.0`（纯竖直运动，无水平位移）
+- `time_of_flight` = `dt × steps`（模拟总时长）
+
+**`projectile`（水平抛）**：
+- `max_height` = `height`（v₀z = 0，初始即为最高点）
+- `range` = `v₀x × t`（水平射程）
+- `time_of_flight` = `dt × steps`（模拟总时长）
+
+### 使用方式
+
+在模板中传入 `include_derived_metrics=True`：
+
+```python
+from src.templates.free_fall import build_psdl as ff_build
+from src.templates.projectile import build_psdl as proj_build
+from src.physics.dispatcher import dispatch_with_validation
+
+# free_fall 含导出量
+psdl = ff_build(height=5.0, v0z=0.0, duration=1.0,
+                include_derived_metrics=True)
+result = dispatch_with_validation(psdl)
+# validation_results 包含 final_z, final_vz, max_height, range, time_of_flight
+
+# projectile 含导出量
+psdl = proj_build(height=10.0, v0x=15.0, duration=2.0,
+                  include_derived_metrics=True)
+result = dispatch_with_validation(psdl)
+# validation_results 包含 final_x, final_z, final_vx, final_vz,
+#                          max_height, range, time_of_flight
+```
+
+默认 `include_derived_metrics=False`，**现有路径和测试零影响**。
 
 ---
 
