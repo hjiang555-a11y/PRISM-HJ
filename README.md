@@ -226,6 +226,28 @@ validate_unit_for_dimension("mph",   Dimension.velocity)       # → UnknownUnit
 - 识别结果为 `None`（未知题型）
 - 所有其他非支持场景（optics、EM 等）
 
+### Projectile 模板（v0.3 扩展）
+
+`projectile` 模板现已支持**水平抛**和**一般斜抛（angled projectile）**两种模式：
+
+| 模式 | 参数 | 说明 |
+|------|------|------|
+| 水平抛（默认） | `v0x`, `height` | 垂直初速度为零，等价于 `v0z=0` |
+| 斜抛（角度） | `v0`, `theta`（弧度） | 自动分解：`v0x = v0·cos(θ)`，`v0z = v0·sin(θ)` |
+| 斜抛（分量） | `v0x`, `v0z` | 直接提供水平和垂直分量 |
+
+参数提取器（`extract_projectile_params`）可识别以下角度表达：
+- 中文：`以30度抛出`、`仰角45°`、`以X度角`、`斜抛`
+- 英文：`at an angle of 30 degrees`、`launched at 45 degrees`
+
+当无角度信息时，自动回退到原有水平抛路径（`v0z = 0`）。
+
+物理约束（所有 projectile 场景均适用）：
+- 无空气阻力
+- 点质量近似
+- 均匀重力场
+- 模拟窗口内不与地面碰撞
+
 ---
 
 ## 求解器策略（v0.2）
@@ -295,9 +317,9 @@ CLI 现在始终打印 solver 路径和验证摘要：
 - `range` = `0.0`（纯竖直运动，无水平位移）
 - `time_of_flight` = `dt × steps`（模拟总时长）
 
-**`projectile`（水平抛）**：
-- `max_height` = `height`（v₀z = 0，初始即为最高点）
-- `range` = `v₀x × t`（水平射程）
+**`projectile`（水平抛 / 一般斜抛）**：
+- `max_height` = `height + v₀z² / (2g)`（若 v₀z > 0，即斜抛），否则 `= height`（水平抛，v₀z = 0）
+- `range` = `v₀x × t`（水平射程，定义与水平抛一致）
 - `time_of_flight` = `dt × steps`（模拟总时长）
 
 ### 使用方式
@@ -315,12 +337,19 @@ psdl = ff_build(height=5.0, v0z=0.0, duration=1.0,
 result = dispatch_with_validation(psdl)
 # validation_results 包含 final_z, final_vz, max_height, range, time_of_flight
 
-# projectile 含导出量
+# projectile 含导出量（水平抛）
 psdl = proj_build(height=10.0, v0x=15.0, duration=2.0,
                   include_derived_metrics=True)
 result = dispatch_with_validation(psdl)
 # validation_results 包含 final_x, final_z, final_vx, final_vz,
 #                          max_height, range, time_of_flight
+
+# projectile 含导出量（斜抛，45°）
+import math
+psdl = proj_build(height=5.0, v0=20.0, theta=math.radians(45.0),
+                  duration=2.0, include_derived_metrics=True)
+result = dispatch_with_validation(psdl)
+# max_height = height + v0z²/(2g)，高于初始高度
 ```
 
 默认 `include_derived_metrics=False`，**现有路径和测试零影响**。

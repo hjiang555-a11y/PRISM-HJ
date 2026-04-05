@@ -165,6 +165,22 @@ class TestProjectileDerivedMetrics:
         assert mh["observed"] == pytest.approx(height, rel=1e-6)
         assert mh["passed"], f"Expected PASS: {mh['message']}"
 
+    def test_max_height_angled_throw(self):
+        """Angled throw (v0z > 0): max_height = height + v0z²/(2g)."""
+        import math
+        height, v0, theta_deg, g = 5.0, 20.0, 30.0, 9.8
+        theta = math.radians(theta_deg)
+        v0z = v0 * math.sin(theta)
+        expected_max_h = height + v0z ** 2 / (2.0 * g)
+        psdl = proj_build(height=height, v0x=v0 * math.cos(theta), v0z=v0z, g=g,
+                          duration=1.0, include_derived_metrics=True)
+        # Provide plausible states; max_height is PSDL-derived, not from states
+        states = _states(x=10.0, z=1.0)
+        results = run_validation(psdl, states)
+        mh = next(r for r in results if r["target"] == "max_height")
+        assert mh["observed"] == pytest.approx(expected_max_h, rel=1e-6)
+        assert mh["passed"], f"Expected PASS: {mh['message']}"
+
     def test_derived_metrics_count_projectile(self):
         """include_derived_metrics=True adds 3 extra targets."""
         psdl_base = proj_build(height=5.0, duration=1.0)

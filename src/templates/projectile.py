@@ -1,10 +1,16 @@
 """
-Projectile scenario template — v0.1.
+Projectile scenario template — v0.2.
 
-:func:`build_psdl` constructs a PSDL v0.1 document for the canonical
-horizontal-throw projectile scenario (object launched horizontally from a
-height with initial horizontal velocity, no air resistance, no ground
-collision within the simulated time span).
+:func:`build_psdl` constructs a PSDL v0.1 document for a general projectile
+scenario: object launched at an arbitrary angle from a height, with no air
+resistance and no ground collision within the simulated time span.
+
+Supported launch modes
+----------------------
+* **Horizontal throw** (default): pass only ``v0x``; ``v0z`` defaults to 0.
+* **Angled throw**: pass ``v0x`` and ``v0z`` directly, *or* pass ``v0`` (speed)
+  and ``theta`` (launch angle above horizontal, in radians) — the template
+  then computes ``v0x = v0 * cos(theta)`` and ``v0z = v0 * sin(theta)``.
 
 The returned document includes:
 
@@ -18,7 +24,8 @@ This template is the authoritative source for projectile test fixtures.
 
 from __future__ import annotations
 
-from typing import List, Union
+import math
+from typing import List, Optional, Union
 
 from src.schema.psdl import (
     BoundaryType,
@@ -51,6 +58,9 @@ def build_psdl(
     *,
     height: float = 5.0,
     v0x: float = 10.0,
+    v0z: float = 0.0,
+    v0: Optional[float] = None,
+    theta: float = 0.0,
     mass: float = 1.0,
     radius: float = 0.1,
     g: float = 9.8,
@@ -62,14 +72,27 @@ def build_psdl(
     source_refs: List[Union[SourceRef, str]] | None = None,
 ) -> PSDL:
     """
-    Build a PSDL document for a horizontal-throw projectile scenario.
+    Build a PSDL document for a general projectile scenario.
 
     Parameters
     ----------
     height:
         Initial height above z=0 (m).  Default: 5.0 m.
     v0x:
-        Initial horizontal velocity (m/s, positive = forward).  Default: 10.0.
+        Initial horizontal velocity component (m/s).  Default: 10.0.
+        Overridden when ``v0`` and ``theta`` are both provided.
+    v0z:
+        Initial vertical velocity component (m/s).  Default: 0.0
+        (horizontal throw).  Overridden when ``v0`` and ``theta`` are both
+        provided.
+    v0:
+        Initial speed magnitude (m/s).  When provided together with
+        ``theta``, ``v0x`` and ``v0z`` are derived as
+        ``v0 * cos(theta)`` and ``v0 * sin(theta)`` respectively.
+    theta:
+        Launch angle above the horizontal plane (radians).  Only used when
+        ``v0`` is also provided.  ``theta = 0`` reproduces the horizontal
+        throw (backward-compatible default).
     mass:
         Particle mass (kg).  Default: 1.0 kg.
     radius:
@@ -97,18 +120,24 @@ def build_psdl(
     PSDL
         Fully populated PSDL v0.1 document with analytic validation targets.
     """
+    # Resolve v0x / v0z from (v0, theta) if the caller supplies a speed + angle.
+    if v0 is not None:
+        v0x = v0 * math.cos(theta)
+        v0z = v0 * math.sin(theta)
+
     steps: int = round(duration / dt)
     t: float = dt * steps
+    g_z: float = -g  # signed gravity component (negative = downward)
 
-    # Exact kinematic solution for horizontal throw:
-    #   x(t) = v0x · t          (constant horizontal velocity)
-    #   z(t) = h − ½ · g · t²  (free fall in vertical direction)
-    #   vx(t) = v0x
-    #   vz(t) = −g · t
+    # General kinematic solution (works for both horizontal and angled throw):
+    #   x(t)  = v0x · t
+    #   z(t)  = h + v0z · t + ½ · g_z · t²
+    #   vx(t) = v0x  (constant)
+    #   vz(t) = v0z + g_z · t
     x_exact: float = v0x * t
-    z_exact: float = height - 0.5 * g * t ** 2
+    z_exact: float = height + v0z * t + 0.5 * g_z * t ** 2
     vx_exact: float = v0x
-    vz_exact: float = -g * t
+    vz_exact: float = v0z + g_z * t
 
     targets = [
         ValidationTarget(
@@ -142,8 +171,12 @@ def build_psdl(
     ]
 
     if include_derived_metrics:
-        # max_height: horizontal throw has v0z = 0 → peak height = initial height
-        max_height_exact: float = height
+        # max_height: analytic peak — z₀ + v₀z² / (2g) when v₀z > 0,
+        # else simply the initial height (already at or past peak).
+        if v0z > 0.0:
+            max_height_exact: float = height + v0z ** 2 / (2.0 * g)
+        else:
+            max_height_exact = height
 
         # range: horizontal displacement x_final − x₀  (x₀ = 0)
         range_exact: float = x_exact
@@ -175,22 +208,48 @@ def build_psdl(
             ),
         ]
 
+    # Build the assumptions list; differentiate horizontal vs. angled throw.
+    is_angled = v0z != 0.0
+    if is_angled:
+        launch_assumption = (
+            f"angled launch: v0x={v0x:.4g} m/s, v0z={v0z:.4g} m/s "
+            f"(theta={math.degrees(theta):.4g}° above horizontal)"
+            if v0 is not None
+            else f"angled launch: v0x={v0x:.4g} m/s, v0z={v0z:.4g} m/s"
+        )
+    else:
+        launch_assumption = "horizontal initial velocity only (no initial vertical component)"
+
+    assumptions = [
+        "no air resistance",
+        "point mass",
+        "uniform gravitational field",
+        launch_assumption,
+        "no ground collision within simulation window",
+    ]
+
+    # Human-readable query
+    if is_angled and v0 is not None:
+        query = (
+            f"Object launched at {math.degrees(theta):.4g}° above horizontal from "
+            f"{height} m with v0={v0} m/s; find position and velocity after {duration} s."
+        )
+    else:
+        query = (
+            f"Object launched horizontally from {height} m with "
+            f"v0x={v0x} m/s; find position and velocity after {duration} s."
+        )
+
     return PSDL(
         schema_version="0.1",
         scenario_type="projectile",
-        assumptions=[
-            "no air resistance",
-            "point mass",
-            "uniform gravitational field",
-            "horizontal initial velocity only (no initial vertical component)",
-            "no ground collision within simulation window",
-        ],
+        assumptions=assumptions,
         source_refs=(
             source_refs if source_refs is not None else list(_DEFAULT_SOURCE_REFS)
         ),
         validation_targets=targets,
         world=WorldSettings(
-            gravity=[0.0, 0.0, -g],
+            gravity=[0.0, 0.0, g_z],
             dt=dt,
             steps=steps,
             ground_plane=False,
@@ -205,12 +264,9 @@ def build_psdl(
                 mass=mass,
                 radius=radius,
                 position=[0.0, 0.0, height],
-                velocity=[v0x, 0.0, 0.0],
+                velocity=[v0x, 0.0, v0z],
                 restitution=0.9,
             )
         ],
-        query=(
-            f"Object launched horizontally from {height} m with "
-            f"v0x={v0x} m/s; find position and velocity after {duration} s."
-        ),
+        query=query,
     )

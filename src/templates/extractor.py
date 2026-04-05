@@ -13,13 +13,16 @@ Supported extractors
 :func:`extract_free_fall_params`
     Returns ``{"height", "duration", "mass", "v0z"}`` or ``None``.
 :func:`extract_projectile_params`
-    Returns ``{"height", "v0x", "duration", "mass"}`` or ``None``.
+    Returns ``{"height", "v0x", "v0z", "duration", "mass"}`` or ``None``.
+    For angled launches, ``v0x`` and ``v0z`` are computed from the extracted
+    speed magnitude and angle; for horizontal throws ``v0z`` is 0.
 :func:`extract_collision_params`
     Returns ``{"m1", "m2", "v1x", "v2x", "collision_type"}`` or ``None``.
 """
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Optional
 
@@ -100,13 +103,28 @@ def extract_free_fall_params(text: str) -> Optional[dict]:
 
 def extract_projectile_params(text: str) -> Optional[dict]:
     """
-    Extract horizontal-throw projectile parameters from *text*.
+    Extract projectile parameters from *text*.
+
+    Supports both horizontal-throw and angled-throw scenarios.
+
+    For an **angled throw**, the extractor looks for an angle expression
+    (Chinese: "以30度", "仰角45°"; English: "at an angle of 30 degrees",
+    "launched at 45 degrees") together with an initial speed.  When an angle
+    is found, ``v0x`` and ``v0z`` are derived as:
+
+        v0x = v0 * cos(theta)
+        v0z = v0 * sin(theta)
+
+    where *theta* is the extracted angle converted to radians.
+
+    For a **horizontal throw** (no angle found), ``v0z`` is set to 0.
 
     Returns
     -------
     dict or None
-        Keys: ``height`` (m), ``v0x`` (m/s), ``duration`` (s), ``mass`` (kg).
-        Returns ``None`` if *height* or *v0x* cannot be determined.
+        Keys: ``height`` (m), ``v0x`` (m/s), ``v0z`` (m/s),
+        ``duration`` (s), ``mass`` (kg).
+        Returns ``None`` if *height* or an initial speed cannot be determined.
     """
     lower = text.lower()
 
@@ -119,14 +137,53 @@ def extract_projectile_params(text: str) -> Optional[dict]:
         or _find(r"from\s+(?:a\s+)?" + _NUM + r"\s*m\b", lower)
     )
 
-    # Horizontal initial velocity
-    v0x = (
-        _find(r"以\s*" + _NUM + r"\s*(?:m/s|米/秒)\s*(?:水平|的水平)", lower)
-        or _find(r"水平.*速度.*?" + _NUM + r"\s*(?:m/s|米/秒)", lower)
-        or _find(r"horizontal\s+(?:velocity|speed)\s+(?:of\s+)?" + _NUM, lower)
-        or _find(r"v0?x\s*=\s*" + _NUM, lower)
-        or _find(_NUM + r"\s*(?:m/s|米/秒)", lower)  # fallback: first speed
+    # ---------------------------------------------------------------------------
+    # Angle detection (degrees → radians)
+    # ---------------------------------------------------------------------------
+    # Chinese patterns: "以30度", "以45°", "仰角30度", "仰角45°", "30度角",
+    #                   "以30度角", "斜抛角度30"
+    # English patterns: "at an angle of 30 degrees", "at 45 degrees",
+    #                   "launched at 45 degrees", "angle of 30°", "30-degree angle"
+    theta_deg: Optional[float] = (
+        _find(r"以\s*" + _NUM + r"\s*(?:度|°)", lower)
+        or _find(r"仰角\s*" + _NUM + r"\s*(?:度|°)?", lower)
+        or _find(_NUM + r"\s*(?:度|°)\s*(?:角|斜抛|抛出)?", lower)
+        or _find(r"at\s+an?\s+angle\s+of\s+" + _NUM + r"\s*(?:degree|deg|°)?", lower)
+        or _find(r"launched?\s+at\s+" + _NUM + r"\s*(?:degree|deg|°)", lower)
+        or _find(r"at\s+" + _NUM + r"\s*(?:degree|deg|°)\b", lower)
+        or _find(r"angle\s+of\s+" + _NUM + r"\s*(?:degree|deg|°)?", lower)
+        or _find(_NUM + r"[\s\-]?degree\s+angle", lower)
     )
+    theta_rad: float = math.radians(theta_deg) if theta_deg is not None else 0.0
+
+    # ---------------------------------------------------------------------------
+    # Speed / velocity extraction
+    # ---------------------------------------------------------------------------
+    if theta_deg is not None:
+        # Angled throw: look for the launch speed (magnitude)
+        v0 = (
+            _find(r"以\s*" + _NUM + r"\s*(?:m/s|米/秒)\s*(?:的速度)?", lower)
+            or _find(r"初速度\s*(?:为|是|=)?\s*" + _NUM + r"\s*(?:m/s|米/秒)?", lower)
+            or _find(r"速度\s*(?:为|是|=)?\s*" + _NUM + r"\s*(?:m/s|米/秒)", lower)
+            or _find(r"(?:initial\s+)?(?:launch\s+)?speed\s+(?:of\s+)?" + _NUM, lower)
+            or _find(r"velocity\s+(?:of\s+)?" + _NUM + r"\s*(?:m/s)?", lower)
+            or _find(r"v0?\s*=\s*" + _NUM, lower)
+            or _find(_NUM + r"\s*(?:m/s|米/秒)", lower)  # fallback: first speed
+        )
+        if v0 is None:
+            return None
+        v0x = v0 * math.cos(theta_rad)
+        v0z = v0 * math.sin(theta_rad)
+    else:
+        # Horizontal throw: extract v0x directly
+        v0x = (
+            _find(r"以\s*" + _NUM + r"\s*(?:m/s|米/秒)\s*(?:水平|的水平)", lower)
+            or _find(r"水平.*速度.*?" + _NUM + r"\s*(?:m/s|米/秒)", lower)
+            or _find(r"horizontal\s+(?:velocity|speed)\s+(?:of\s+)?" + _NUM, lower)
+            or _find(r"v0?x\s*=\s*" + _NUM, lower)
+            or _find(_NUM + r"\s*(?:m/s|米/秒)", lower)  # fallback: first speed
+        )
+        v0z = 0.0
 
     # Duration
     duration = (
@@ -148,6 +205,7 @@ def extract_projectile_params(text: str) -> Optional[dict]:
     return {
         "height": height,
         "v0x": v0x,
+        "v0z": v0z,
         "duration": duration if duration is not None else 1.0,
         "mass": mass if mass is not None else 1.0,
     }

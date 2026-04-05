@@ -374,11 +374,16 @@ def classify_scenario(user_query: str) -> str | None:
         r'斜抛',
         r'以.*速度.*水平',
         r'水平.*速度.*抛',
+        r'仰角',
+        r'以.*度.*抛',
+        r'以.*°.*抛',
         r'\bprojectile\b',
         r'\bhorizontally?\s+thrown?\b',
         r'\bthrown?\s+horizontally?\b',
         r'\blaunched?\s+(at\s+an?\s+angle|horizontally?)\b',
         r'\binitial\s+horizontal\s+velocity\b',
+        r'\bat\s+an?\s+angle\s+of\b',
+        r'\blaunched?\s+at\s+\d',
     ]
 
     # ------------------------------------------------------------------ #
