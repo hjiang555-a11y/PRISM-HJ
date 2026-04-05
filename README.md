@@ -279,6 +279,21 @@ CLI 现在始终打印 solver 路径和验证摘要：
 
 PRISM-HJ currently reserves an exploration mode for future creative extensions such as parameter sweeps, interestingness metrics, scenario composition, and hypothesis generation. This mode is not implemented yet. Running with `--explore` currently returns and displays a structured placeholder result, and does not affect the normal deterministic simulation workflow.
 
+### exploration_config minimal schema（v0.1）
+
+`WorldSettings.exploration_config` has been upgraded from a bare `Optional[dict]` to a minimal structured model (`ExplorationConfig`). The schema is defined in `src/schema/exploration.py` and includes:
+
+- **`parameters: list[ExplorationParameter]`** — the parameter dimensions to explore (default: empty list). Each parameter requires a `name` and optionally `type`, `range`, `sampling`, and `step`.
+- **`combine_method: str | None`** — how multiple parameters are combined (reserved, e.g. `"cartesian"`).
+- **`interestingness: dict | None`** — placeholder for future interestingness-metric configuration.
+
+Structural validation is enforced at load time:
+- Each parameter `name` must be non-empty.
+- `range` (if provided) must be a 2-element list with `range[0] <= range[1]`.
+- When `sampling == "grid"` and `step` is provided, `step` must be `> 0`.
+
+This is a **contract layer only**: no real exploration algorithm is executed. The `--explore` CLI path continues to return the existing structured placeholder result unmodified.
+
 ---
 
 ## 设计原则

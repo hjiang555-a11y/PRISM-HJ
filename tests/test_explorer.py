@@ -18,6 +18,7 @@ from src.explorer.placeholder import (
     explore as explore_direct,
 )
 from src.schema.psdl import PSDL, WorldSettings
+from src.schema.exploration import ExplorationConfig, ExplorationParameter
 
 
 # ---------------------------------------------------------------------------
@@ -136,16 +137,26 @@ class TestExplorationConfigField:
         psdl = PSDL()
         assert psdl.world.exploration_config is None
 
-    def test_world_settings_accepts_dict(self):
-        ws = WorldSettings(exploration_config={"strategy": "grid", "param": "mass"})
-        assert ws.exploration_config == {"strategy": "grid", "param": "mass"}
+    def test_world_settings_accepts_exploration_config(self):
+        cfg = ExplorationConfig(
+            parameters=[ExplorationParameter(name="mass", type="float", range=[0.1, 10.0])],
+        )
+        ws = WorldSettings(exploration_config=cfg)
+        assert ws.exploration_config is not None
+        assert ws.exploration_config.parameters[0].name == "mass"
 
     def test_psdl_with_exploration_config(self):
-        psdl = PSDL(world=WorldSettings(exploration_config={"strategy": "bayesian"}))
-        assert psdl.world.exploration_config == {"strategy": "bayesian"}
+        cfg = ExplorationConfig(
+            parameters=[ExplorationParameter(name="velocity", type="float")],
+            combine_method="cartesian",
+        )
+        psdl = PSDL(world=WorldSettings(exploration_config=cfg))
+        assert psdl.world.exploration_config is not None
+        assert psdl.world.exploration_config.combine_method == "cartesian"
 
     def test_exploration_config_in_json_output(self):
-        psdl = PSDL(world=WorldSettings(exploration_config={"x": 1}))
+        cfg = ExplorationConfig(parameters=[ExplorationParameter(name="mass", type="float")])
+        psdl = PSDL(world=WorldSettings(exploration_config=cfg))
         json_str = psdl.pretty_print()
         assert "exploration_config" in json_str
 
@@ -155,7 +166,8 @@ class TestExplorationConfigField:
         assert "exploration_config" in json_str  # field is present even when null
 
     def test_pretty_print_hints_when_set(self):
-        ws = WorldSettings(exploration_config={"x": 1})
+        cfg = ExplorationConfig()
+        ws = WorldSettings(exploration_config=cfg)
         assert "exploration_config=<set>" in ws.pretty_print()
 
     def test_pretty_print_no_hint_when_none(self):

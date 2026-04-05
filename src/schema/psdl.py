@@ -17,6 +17,7 @@ from typing import List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator
 
+from src.schema.exploration import ExplorationConfig
 from src.schema.units import Dimension, validate_unit_for_dimension
 
 # ---------------------------------------------------------------------------
@@ -110,14 +111,15 @@ class WorldSettings(BaseModel):
         default=["newton_second", "energy_conservation"],
         description="Physical theorems to be honoured by the simulation",
     )
-    exploration_config: Optional[dict] = Field(
+    exploration_config: Optional[ExplorationConfig] = Field(
         default=None,
         description=(
-            "预留字段：探索模式配置。"
-            "当该字段不为空时，表示场景可能进入探索模式（由 --explore 开关激活）。"
-            "当前仅为预留字段，不影响确定性模拟主路径。"
-            "未来将包含参数范围、探索策略（grid/random/bayesian）、"
-            "有趣性度量选择等配置项。"
+            "探索模式配置（最小结构化 schema）。"
+            "当该字段不为空时，表示场景携带了参数空间探索意图，"
+            "可由 --explore 开关激活。"
+            "当前仅做结构校验，不执行真实探索算法，不影响确定性模拟主路径。"
+            "字段类型已从裸 dict 升级为 ExplorationConfig，"
+            "包含 parameters / combine_method / interestingness 等最小子字段。"
         ),
     )
 
