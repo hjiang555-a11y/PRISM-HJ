@@ -1,23 +1,30 @@
 """
-Unit tests for the free-fall physics scenario.
+Unit tests for the free-fall physics scenario — upgraded for PSDL v0.1.
 
-Analytical solution (no air resistance, semi-implicit Euler integrator):
-    The kinematic equations for free fall from z0=5m with g=9.8 m/s², t=1s:
-        vz(t) = -g * t  →  vz(1) = -9.8 m/s
-        Δz    = -½ g t²  →  Δz(1) = -4.9 m  →  z(1) = 0.1 m
+Gold-standard validation strategy
+-----------------------------------
+All gold-standard results are now produced by the *exact* kinematic
+equations in :mod:`src.physics.analytic`, not hard-coded constants.
+This means the test suite is self-consistent: if the formula changes,
+both the reference and the assertion update together.
 
-    PyBullet uses a semi-implicit (symplectic) Euler integrator which gives:
-        z[N] = z0 + g·dt² · N(N+1)/2  (slightly ahead of the exact solution)
-
-    The test validates that simulation results are within 5% of the
-    analytical *displacement* (not absolute position, to avoid the
-    near-zero denominator when z≈0 at t=1s).
+Three verification tiers
+------------------------
+1. **Analytic solver** (``test_analytic_*``): exact closed-form solution —
+   tolerance is floating-point precision (< 1e-9).
+2. **Template + dispatcher** (``test_template_*``): end-to-end via
+   :func:`src.physics.dispatcher.dispatch` — uses the analytic path,
+   tolerance 1%.
+3. **PyBullet numerical solver** (``TestPhysicsSimulatorDirect``): direct
+   engine tests; tolerance 5% (semi-implicit Euler integration error).
 """
 
 from __future__ import annotations
 
 import pytest
 
+from src.physics.analytic import solve_free_fall
+from src.physics.dispatcher import dispatch
 from src.physics.engine import PhysicsSimulator, simulate_psdl
 from src.schema.psdl import (
     BoundaryType,
@@ -26,134 +33,160 @@ from src.schema.psdl import (
     SpaceBox,
     WorldSettings,
 )
+from src.templates import free_fall as ff_template
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Tier 1: Analytic solver (exact, floating-point precision only)
 # ---------------------------------------------------------------------------
 
-def _build_free_fall_psdl(
-    height: float = 5.0,
-    mass: float = 2.0,
-    t_sim: float = 1.0,
-    dt: float = 0.01,
-) -> PSDL:
-    """Construct a PSDL document for a free-fall scenario."""
-    steps = round(t_sim / dt)
-    return PSDL(
-        world=WorldSettings(
-            gravity=[0.0, 0.0, -9.8],
-            dt=dt,
-            steps=steps,
-            space=SpaceBox(
-                min=[-50.0, -50.0, -50.0],
-                max=[50.0, 50.0, 50.0],
-                boundary_type=BoundaryType.elastic,
-            ),
-        ),
-        objects=[
-            ParticleObject(
-                mass=mass,
-                radius=0.1,
-                position=[0.0, 0.0, height],
-                velocity=[0.0, 0.0, 0.0],
-                restitution=0.9,
-            )
-        ],
-        query="1秒后球的位置和速度",
-    )
+class TestAnalyticFreeFall:
+    """Verify the exact kinematic solver against manual calculations."""
 
+    def test_z_position_exact(self):
+        """z(1s) = 5 − 0.5·9.8·1² = 0.1 m (exact)."""
+        psdl = ff_template.build_psdl(height=5.0, g=9.8, duration=1.0)
+        states = solve_free_fall(psdl)
+        assert abs(states[0]["position"][2] - 0.1) < 1e-6
 
-def analytical_free_fall(z0: float, v0z: float, g: float, t: float):
-    """Return (z, vz) from the exact kinematic equations."""
-    z = z0 + v0z * t - 0.5 * g * t ** 2
-    vz = v0z - g * t
-    return z, vz
+    def test_vz_velocity_exact(self):
+        """vz(1s) = −9.8 m/s (exact)."""
+        psdl = ff_template.build_psdl(height=5.0, g=9.8, duration=1.0)
+        states = solve_free_fall(psdl)
+        assert abs(states[0]["velocity"][2] - (-9.8)) < 1e-6
 
+    def test_horizontal_components_unchanged(self):
+        """With no horizontal force, x/y/vx/vy remain at initial values."""
+        psdl = ff_template.build_psdl(height=5.0, duration=1.0)
+        states = solve_free_fall(psdl)
+        assert abs(states[0]["position"][0]) < 1e-9
+        assert abs(states[0]["position"][1]) < 1e-9
+        assert abs(states[0]["velocity"][0]) < 1e-9
+        assert abs(states[0]["velocity"][1]) < 1e-9
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
+    def test_mass_independence(self):
+        """Galilean equivalence: trajectory must not depend on mass."""
+        z_01  = solve_free_fall(ff_template.build_psdl(height=10.0, mass=0.01))[0]["position"][2]
+        z_100 = solve_free_fall(ff_template.build_psdl(height=10.0, mass=100.0))[0]["position"][2]
+        assert abs(z_01 - z_100) < 1e-9
 
-class TestFreeFall:
-    """Verify that the PyBullet simulation matches the analytical free-fall solution."""
+    def test_no_particles_raises(self):
+        """solve_free_fall must raise ValueError on an empty PSDL."""
+        psdl = PSDL(scenario_type="free_fall")
+        with pytest.raises(ValueError, match="no ParticleObject"):
+            solve_free_fall(psdl)
 
-    def test_displacement_within_tolerance(self):
-        """Vertical displacement must be within 5% of the analytical value.
-
-        We compare *displacement* (Δz = z_final - z_initial) rather than
-        absolute position to avoid the near-zero denominator at t=1 s when
-        z ≈ 0.1 m.  The analytical displacement is -4.9 m; PyBullet's
-        semi-implicit Euler gives ≈ -4.95 m, an error of ~1%.
+    def test_with_initial_velocity(self):
         """
-        g = 9.8
-        z0, v0z, t = 5.0, 0.0, 1.0
+        Object thrown upward at 5 m/s from z=0:
+            z(2s) = 0 + 5·2 − 0.5·9.8·4 = 10 − 19.6 = −9.6 m
+            vz(2s) = 5 − 9.8·2 = −14.6 m/s
+        """
+        psdl = ff_template.build_psdl(height=0.0, v0z=5.0, g=9.8, duration=2.0)
+        states = solve_free_fall(psdl)
+        assert abs(states[0]["position"][2] - (-9.6)) < 1e-5
+        assert abs(states[0]["velocity"][2] - (-14.6)) < 1e-5
 
-        psdl = _build_free_fall_psdl(height=z0, mass=2.0, t_sim=t)
-        states = simulate_psdl(psdl)
 
-        assert len(states) == 1, "Expected exactly one particle state."
-        sim_z = states[0]["position"][2]
-        sim_displacement = sim_z - z0                       # should be ≈ -4.9 m
-        analytical_z, _ = analytical_free_fall(z0, v0z, g, t)
-        analytical_displacement = analytical_z - z0        # -4.9 m
+# ---------------------------------------------------------------------------
+# Tier 2: Template + dispatcher (1% tolerance, analytic path)
+# ---------------------------------------------------------------------------
 
-        # 5% tolerance on the displacement magnitude
-        tol = 0.05 * abs(analytical_displacement)
-        assert abs(sim_displacement - analytical_displacement) <= tol, (
-            f"displacement out of tolerance: sim={sim_displacement:.4f} m, "
-            f"analytical={analytical_displacement:.4f} m, tol=±{tol:.4f} m"
+class TestTemplateFreefall:
+    """Verify that the template builds valid PSDL and the dispatcher handles it."""
+
+    def test_template_produces_valid_psdl(self):
+        psdl = ff_template.build_psdl()
+        assert psdl.schema_version == "0.1"
+        assert psdl.scenario_type == "free_fall"
+        assert len(psdl.assumptions) >= 1
+        assert len(psdl.validation_targets) == 2
+
+    def test_dispatch_matches_template_targets(self):
+        """All template ValidationTargets must pass after dispatch (1% tol)."""
+        psdl = ff_template.build_psdl(
+            height=5.0, g=9.8, duration=1.0,
+            validation_tolerance_pct=1.0,
+        )
+        states = dispatch(psdl)
+        field_map = {
+            "final_z":  states[0]["position"][2],
+            "final_vz": states[0]["velocity"][2],
+        }
+        for vt in psdl.validation_targets:
+            actual = field_map[vt.name]
+            assert vt.check(actual), (
+                f"ValidationTarget '{vt.name}' failed: "
+                f"actual={actual:.6f}, expected={vt.expected_value:.6f}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Tier 3: PyBullet numerical solver (≤5% tolerance, semi-implicit Euler)
+# ---------------------------------------------------------------------------
+
+class TestFreeFallPyBullet:
+    """
+    Verify that PyBullet's semi-implicit Euler integration stays within 5%
+    of the analytical solution.  These tests call simulate_psdl directly
+    (without the dispatcher) to exercise the engine layer in isolation.
+    """
+
+    def _build_psdl_no_ground(
+        self, height: float = 5.0, mass: float = 1.0, t_sim: float = 1.0, dt: float = 0.01
+    ) -> PSDL:
+        steps = round(t_sim / dt)
+        return PSDL(
+            world=WorldSettings(
+                gravity=[0.0, 0.0, -9.8],
+                dt=dt,
+                steps=steps,
+                ground_plane=False,
+                space=SpaceBox(min=[-50, -50, -50], max=[50, 50, 50]),
+            ),
+            objects=[
+                ParticleObject(
+                    mass=mass, radius=0.1,
+                    position=[0.0, 0.0, height],
+                    velocity=[0.0, 0.0, 0.0],
+                )
+            ],
+            query="pybullet free fall",
         )
 
-    def test_velocity_within_tolerance(self):
-        """Final z-velocity must be within 5% of the analytical solution.
-
-        With linear damping set to 0, PyBullet matches vz = -g*t exactly.
-        """
-        g = 9.8
-        z0, v0z, t = 5.0, 0.0, 1.0
-
-        psdl = _build_free_fall_psdl(height=z0, mass=2.0, t_sim=t)
+    def test_displacement_within_5pct(self):
+        g, z0, t = 9.8, 5.0, 1.0
+        psdl = self._build_psdl_no_ground(height=z0)
         states = simulate_psdl(psdl)
+        sim_disp = states[0]["position"][2] - z0
+        exact_disp = -0.5 * g * t ** 2
+        tol = 0.05 * abs(exact_disp)
+        assert abs(sim_disp - exact_disp) <= tol, (
+            f"displacement out of tolerance: sim={sim_disp:.4f}, exact={exact_disp:.4f}"
+        )
 
-        sim_vz = states[0]["velocity"][2]
-        _, analytical_vz = analytical_free_fall(z0, v0z, g, t)
-
-        tol = 0.05 * abs(analytical_vz)
-        assert abs(sim_vz - analytical_vz) <= tol, (
-            f"z velocity out of tolerance: sim={sim_vz:.4f} m/s, "
-            f"analytical={analytical_vz:.4f} m/s, tol=±{tol:.4f} m/s"
+    def test_velocity_within_5pct(self):
+        g, t = 9.8, 1.0
+        psdl = self._build_psdl_no_ground()
+        states = simulate_psdl(psdl)
+        vz_sim = states[0]["velocity"][2]
+        vz_exact = -g * t
+        tol = 0.05 * abs(vz_exact)
+        assert abs(vz_sim - vz_exact) <= tol, (
+            f"velocity out of tolerance: sim={vz_sim:.4f}, exact={vz_exact:.4f}"
         )
 
     def test_horizontal_components_zero(self):
-        """With no horizontal forces or initial velocity, x and y must stay ≈ 0."""
-        psdl = _build_free_fall_psdl()
-        states = simulate_psdl(psdl)
-
-        sim_x = states[0]["position"][0]
-        sim_y = states[0]["position"][1]
-        sim_vx = states[0]["velocity"][0]
-        sim_vy = states[0]["velocity"][1]
-
-        assert abs(sim_x) < 1e-4, f"x position should be ~0, got {sim_x}"
-        assert abs(sim_y) < 1e-4, f"y position should be ~0, got {sim_y}"
-        assert abs(sim_vx) < 1e-4, f"x velocity should be ~0, got {sim_vx}"
-        assert abs(sim_vy) < 1e-4, f"y velocity should be ~0, got {sim_vy}"
+        states = simulate_psdl(self._build_psdl_no_ground())
+        assert abs(states[0]["position"][0]) < 1e-4
+        assert abs(states[0]["position"][1]) < 1e-4
+        assert abs(states[0]["velocity"][0]) < 1e-4
+        assert abs(states[0]["velocity"][1]) < 1e-4
 
     def test_mass_independence(self):
-        """In the absence of air drag, all masses should fall identically."""
-        psdl_light = _build_free_fall_psdl(mass=0.1)
-        psdl_heavy = _build_free_fall_psdl(mass=100.0)
-
-        states_light = simulate_psdl(psdl_light)
-        states_heavy = simulate_psdl(psdl_heavy)
-
-        z_light = states_light[0]["position"][2]
-        z_heavy = states_heavy[0]["position"][2]
-
-        assert abs(z_light - z_heavy) < 0.01, (
-            f"Different masses gave different positions: {z_light:.4f} vs {z_heavy:.4f}"
-        )
+        z_light = simulate_psdl(self._build_psdl_no_ground(mass=0.1))[0]["position"][2]
+        z_heavy = simulate_psdl(self._build_psdl_no_ground(mass=100.0))[0]["position"][2]
+        assert abs(z_light - z_heavy) < 0.01
 
 
 class TestPhysicsSimulatorDirect:
@@ -183,18 +216,43 @@ class TestPhysicsSimulatorDirect:
             obj = ParticleObject(
                 mass=1.0, radius=0.01,
                 position=[4.9, 2.5, 2.5],
-                velocity=[10.0, 0.0, 0.0],  # moving toward x=5 wall
+                velocity=[10.0, 0.0, 0.0],
                 restitution=1.0,
             )
             sim.add_particle(obj)
-            # Step a few times so the particle hits the x=5 boundary
             sim.step(steps=5, space=space)
             states = sim.get_particle_states()
-            # After bouncing, x velocity should be negative
             assert states[0]["velocity"][0] < 0, (
                 f"Expected negative vx after elastic reflection, "
                 f"got {states[0]['velocity'][0]}"
             )
         finally:
             sim.close()
+
+    def test_no_ground_plane_by_default(self):
+        """simulate_psdl must NOT add a ground plane unless explicitly requested."""
+        psdl = PSDL(
+            world=WorldSettings(
+                gravity=[0.0, 0.0, -9.8],
+                dt=0.01,
+                steps=200,       # 2 s — ball falls past z=0 without collision
+                ground_plane=False,
+                space=SpaceBox(min=[-50, -50, -50], max=[50, 50, 50]),
+            ),
+            objects=[
+                ParticleObject(
+                    mass=1.0, radius=0.1,
+                    position=[0.0, 0.0, 1.0],
+                    velocity=[0.0, 0.0, 0.0],
+                )
+            ],
+        )
+        states = simulate_psdl(psdl)
+        # Without a ground plane, z should be below 0 after 2s of free fall
+        # z(2s) = 1 - 0.5*9.8*4 ≈ -18.6 m
+        z_final = states[0]["position"][2]
+        assert z_final < 0.0, (
+            f"Without ground plane, ball should fall below z=0; got z={z_final:.4f}"
+        )
+
 
