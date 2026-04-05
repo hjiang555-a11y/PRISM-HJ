@@ -113,7 +113,7 @@ class TestMainExplorePath:
         main(["--explore", "--question", "任何问题"])
         assert calls == [], "text_to_psdl should not be called with --explore"
 
-    def test_explore_flag_clean_exit(self, capsys):
+    def test_explore_flag_returns_zero_exit_code(self, capsys):
         from main import main
 
         rc = main(["--explore", "--question", "任何问题"])
