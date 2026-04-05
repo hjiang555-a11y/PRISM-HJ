@@ -7,7 +7,7 @@ src.explorer — 探索与创造性扩展模块（预留）
 用法（未来演进方向）::
 
     from src.explorer import explore
-    results = explore(base_psdl, exploration_config)
+    result = explore(base_psdl, exploration_config)
 """
 
 from src.explorer.placeholder import explore

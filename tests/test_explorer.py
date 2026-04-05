@@ -2,7 +2,7 @@
 Tests for the exploration reserve (src/explorer) and related CLI/schema extensions.
 
 Covers:
-1. explore() placeholder outputs the reservation message and returns [].
+1. explore() placeholder outputs the reservation message and returns a structured result.
 2. main() --explore path calls explore() and does NOT enter the deterministic pipeline.
 3. WorldSettings / PSDL carry the exploration_config field (default None).
 4. Without --explore the existing deterministic pipeline is unaffected.
@@ -10,13 +10,11 @@ Covers:
 
 from __future__ import annotations
 
-import io
-import sys
-
-import pytest
-
 from src.explorer import explore
-from src.explorer.placeholder import explore as explore_direct
+from src.explorer.placeholder import (
+    EXPLORER_RESERVED_MESSAGE,
+    explore as explore_direct,
+)
 from src.schema.psdl import PSDL, WorldSettings
 
 
@@ -28,21 +26,30 @@ class TestExplorePlaceholder:
     def test_prints_reservation_message(self, capsys):
         explore(base_psdl=None, exploration_config=None)
         out = capsys.readouterr().out
-        assert "探索模式已预留，尚未实现。" in out
+        assert EXPLORER_RESERVED_MESSAGE in out
 
-    def test_returns_empty_list(self):
+    def test_returns_structured_reserved_result(self):
         result = explore(base_psdl=None, exploration_config=None)
-        assert result == []
+        assert isinstance(result, dict)
+        assert result["mode"] == "explore"
+        assert result["status"] == "reserved"
+        assert EXPLORER_RESERVED_MESSAGE in result["message"]
+        assert result["results"] == []
+        assert result["base_psdl"] is None
+        assert result["exploration_config"] is None
+        assert "parameter_space_search" in result["metadata"]["future_capabilities"]
 
-    def test_returns_empty_list_with_config(self):
-        result = explore(base_psdl=None, exploration_config={"strategy": "grid"})
-        assert result == []
+    def test_echoes_lightweight_inputs(self):
+        config = {"strategy": "grid"}
+        result = explore(base_psdl=None, exploration_config=config)
+        assert result["exploration_config"] == config
 
-    def test_direct_import_same_as_package_import(self, capsys):
+    def test_direct_import_same_as_package_import(self):
         """from src.explorer import explore must resolve to placeholder.explore."""
         r1 = explore(None, None)
         r2 = explore_direct(None, None)
-        assert r1 == r2 == []
+        assert r1 == r2
+        assert r1["mode"] == "explore"
 
 
 # ---------------------------------------------------------------------------
@@ -61,7 +68,10 @@ class TestMainExplorePath:
         from main import main
         main(["--explore", "--question", "任何问题"])
         out = capsys.readouterr().out
-        assert "探索模式已预留，尚未实现。" in out
+        assert EXPLORER_RESERVED_MESSAGE in out
+        assert "Structured explorer result:" in out
+        assert '"mode": "explore"' in out
+        assert '"status": "reserved"' in out
 
     def test_explore_does_not_enter_dispatch(self, monkeypatch):
         """When --explore is set, dispatch_with_validation must NOT be called."""
@@ -95,6 +105,15 @@ class TestMainExplorePath:
         from main import main
         main(["--explore", "--question", "任何问题"])
         assert calls == [], "text_to_psdl should not be called with --explore"
+
+    def test_explore_flag_clean_exit(self, capsys):
+        from main import main
+
+        rc = main(["--explore", "--question", "任何问题"])
+        out = capsys.readouterr().out
+
+        assert rc == 0
+        assert EXPLORER_RESERVED_MESSAGE in out
 
 
 # ---------------------------------------------------------------------------

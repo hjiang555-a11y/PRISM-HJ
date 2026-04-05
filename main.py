@@ -46,7 +46,7 @@ def run_explore(question: str) -> None:
     """
     Enter the exploration placeholder path.
 
-    当前行为：调用 explore() 占位函数并输出提示，然后返回，不进入
+    当前行为：调用 explore() 占位函数并消费其结构化结果，然后返回，不进入
     deterministic simulate_psdl() / dispatch_with_validation() 主路径。
 
     未来演进方向：
@@ -65,7 +65,9 @@ def run_explore(question: str) -> None:
     # base_psdl: 未来将由 text_to_psdl(question) 生成；
     # exploration_config: 未来将从 PSDL.world.exploration_config 或额外参数读取。
     # 当前均传入 None 作为占位值。
-    explore(base_psdl=None, exploration_config=None)
+    result = explore(base_psdl=None, exploration_config=None)
+    print("\nStructured explorer result:")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 # ---------------------------------------------------------------------------

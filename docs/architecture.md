@@ -87,6 +87,8 @@ PRISM-HJ（Physical Reasoning & Inference System for Mechanics — HJ）采用**
 
 **模块**：`src/physics/dispatcher.py`，`src/templates/`
 
+补充说明：`src/explorer/` 是预留中的实验性 orchestration lane，用于未来的探索模式扩展；它不属于物理执行核心，也不会进入默认确定性执行链。
+
 **职责**：
 - `dispatch(psdl) -> List[Dict]`：根据 `scenario_type` 路由到对应求解器
 - 当前支持：
