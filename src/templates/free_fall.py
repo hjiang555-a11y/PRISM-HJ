@@ -10,21 +10,38 @@ The returned document includes:
 * ``scenario_type = "free_fall"``
 * Explicit ``assumptions`` list
 * Pre-computed ``validation_targets`` based on the exact kinematic solution
-* Appropriate ``source_refs``
+* Appropriate ``source_refs`` (defaults to OpenStax / MIT OCW)
 
 This template is the authoritative source for free-fall test fixtures.
 """
 
 from __future__ import annotations
 
+from typing import List, Union
+
 from src.schema.psdl import (
     BoundaryType,
     ParticleObject,
     PSDL,
+    SourceRef,
     SpaceBox,
     ValidationTarget,
     WorldSettings,
 )
+
+# Default source references for free-fall templates.
+# NIST / ITU are intentionally excluded — they cover unit definitions only,
+# not mechanics problem templates.
+_DEFAULT_SOURCE_REFS: List[SourceRef] = [
+    SourceRef(
+        source_id="openstax_university_physics_v1",
+        role="primary_template_source",
+    ),
+    SourceRef(
+        source_id="mit_ocw_physics",
+        role="secondary_reference",
+    ),
+]
 
 
 def build_psdl(
@@ -38,7 +55,7 @@ def build_psdl(
     dt: float = 0.01,
     space_half_extent: float = 50.0,
     validation_tolerance_pct: float = 1.0,
-    source_refs: list[str] | None = None,
+    source_refs: List[Union[SourceRef, str]] | None = None,
 ) -> PSDL:
     """
     Build a PSDL document for a free-fall scenario.
@@ -64,7 +81,9 @@ def build_psdl(
     validation_tolerance_pct:
         Tolerance for :class:`ValidationTarget` checks (%).  Default: 1%.
     source_refs:
-        Optional provenance strings (e.g. textbook chapter references).
+        Provenance references.  Defaults to OpenStax + MIT OCW (both
+        tier_1_authoritative).  NIST / ITU are never included by default
+        because they cover unit standards only, not mechanics templates.
 
     Returns
     -------
@@ -104,7 +123,7 @@ def build_psdl(
             "uniform gravitational field",
             "no ground collision within simulation window",
         ],
-        source_refs=source_refs or [],
+        source_refs=source_refs if source_refs is not None else list(_DEFAULT_SOURCE_REFS),
         validation_targets=targets,
         world=WorldSettings(
             gravity=[0.0, 0.0, -g],
