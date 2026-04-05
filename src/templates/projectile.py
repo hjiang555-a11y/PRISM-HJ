@@ -211,11 +211,16 @@ def build_psdl(
     # Build the assumptions list; differentiate horizontal vs. angled throw.
     is_angled = v0z != 0.0
     if is_angled:
+        # theta is always defined (it's a function parameter with default 0.0).
+        # We only include the angle value in the assumption string when the
+        # caller explicitly provided a launch speed + angle via v0/theta;
+        # direct v0x/v0z usage omits the degree value.
+        if v0 is not None:
+            theta_str = f" (theta={math.degrees(theta):.4g}° above horizontal)"
+        else:
+            theta_str = ""
         launch_assumption = (
-            f"angled launch: v0x={v0x:.4g} m/s, v0z={v0z:.4g} m/s "
-            f"(theta={math.degrees(theta):.4g}° above horizontal)"
-            if v0 is not None
-            else f"angled launch: v0x={v0x:.4g} m/s, v0z={v0z:.4g} m/s"
+            f"angled launch: v0x={v0x:.4g} m/s, v0z={v0z:.4g} m/s{theta_str}"
         )
     else:
         launch_assumption = "horizontal initial velocity only (no initial vertical component)"

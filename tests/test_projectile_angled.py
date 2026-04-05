@@ -116,6 +116,7 @@ class TestAngledProjectileTemplate:
                 assert "itu" not in ref.source_id.lower()
 
     def test_source_refs_include_openstax(self):
+        """OpenStax must appear in source refs for angled projectile scenarios."""
         from src.schema.psdl import SourceRef
         psdl = build_psdl(height=5.0, v0=20.0, theta=math.radians(30.0))
         ids = [r.source_id for r in psdl.source_refs if isinstance(r, SourceRef)]

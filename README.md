@@ -226,7 +226,7 @@ validate_unit_for_dimension("mph",   Dimension.velocity)       # → UnknownUnit
 - 识别结果为 `None`（未知题型）
 - 所有其他非支持场景（optics、EM 等）
 
-### Projectile 模板（v0.3 扩展）
+### Projectile 模板扩展
 
 `projectile` 模板现已支持**水平抛**和**一般斜抛（angled projectile）**两种模式：
 
