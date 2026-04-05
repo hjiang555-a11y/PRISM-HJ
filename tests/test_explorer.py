@@ -72,7 +72,9 @@ class TestMainExplorePath:
         out = capsys.readouterr().out
         assert EXPLORER_RESERVED_MESSAGE in out
         assert "Structured explorer result:" in out
-        json_blob = out.split("Structured explorer result:\n", maxsplit=1)[1].strip()
+        parts = out.split("Structured explorer result:\n", maxsplit=1)
+        assert len(parts) == 2
+        json_blob = parts[1].strip()
         parsed = json.loads(json_blob)
         assert parsed["mode"] == "explore"
         assert parsed["status"] == "reserved"
