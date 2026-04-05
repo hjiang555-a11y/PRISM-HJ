@@ -306,11 +306,18 @@ def simulate_psdl(psdl: PSDL) -> List[Dict]:
     Steps
     -----
     1. Create a :class:`PhysicsSimulator` with the world's gravity and dt.
-    2. Add a ground plane.
+    2. Add a ground plane **only** if ``psdl.world.ground_plane`` is ``True``.
     3. Add all :class:`ParticleObject` instances in ``psdl.objects``.
     4. Run ``psdl.world.steps`` simulation steps.
     5. Retrieve and return final particle states.
     6. Close the simulator.
+
+    Ground-plane policy
+    -------------------
+    The execution layer **never** adds a ground plane implicitly.  Callers
+    that need a floor must set ``psdl.world.ground_plane = True`` in the PSDL
+    document.  This makes the physical assumption explicit and auditable at
+    the contract layer.
 
     Parameters
     ----------
@@ -327,7 +334,8 @@ def simulate_psdl(psdl: PSDL) -> List[Dict]:
         dt=psdl.world.dt,
     )
     try:
-        sim.add_plane()
+        if psdl.world.ground_plane:
+            sim.add_plane()
 
         for obj in psdl.objects:
             if isinstance(obj, ParticleObject):

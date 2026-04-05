@@ -1,7 +1,13 @@
 """
-PSDL (Physical Scene Description Language) Pydantic models.
+PSDL (Physical Scene Description Language) Pydantic models — v0.1.
 
-All values use SI units (metres, kilograms, seconds).
+PSDL is the *knowledge contract* that separates the natural-language interface
+from the deterministic physics execution layer.  Every document must be
+self-describing: it carries its own schema version, scenario classification,
+explicit assumptions, provenance references, and expected validation targets.
+
+All values use SI units (metres, kilograms, seconds) unless stated otherwise.
+Unit symbols are validated against :mod:`src.schema.units`.
 """
 
 from __future__ import annotations
@@ -9,7 +15,9 @@ from __future__ import annotations
 from enum import Enum
 from typing import List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from src.schema.units import Dimension, validate_unit_for_dimension
 
 
 # ---------------------------------------------------------------------------
@@ -44,16 +52,32 @@ class WorldSettings(BaseModel):
     steps: int = Field(default=100, description="Number of simulation steps")
     space: SpaceBox = Field(default_factory=SpaceBox)
     observer: Optional[Observer] = None
+    ground_plane: bool = Field(
+        default=False,
+        description=(
+            "Whether a ground plane exists at z=0. "
+            "Must be set explicitly — the execution layer never adds a ground "
+            "plane unless this flag is True."
+        ),
+    )
     theorems: List[str] = Field(
         default=["newton_second", "energy_conservation"],
         description="Physical theorems to be honoured by the simulation",
     )
 
+    @field_validator("gravity")
+    @classmethod
+    def _gravity_has_three_components(cls, v: List[float]) -> List[float]:
+        if len(v) != 3:
+            raise ValueError("gravity must have exactly 3 components (x, y, z)")
+        return v
+
     def pretty_print(self) -> str:
         """Return a human-readable summary of world settings."""
         return (
             f"WorldSettings(gravity={self.gravity}, dt={self.dt}s, "
-            f"steps={self.steps}, boundary={self.space.boundary_type})"
+            f"steps={self.steps}, boundary={self.space.boundary_type}, "
+            f"ground_plane={self.ground_plane})"
         )
 
 
@@ -88,6 +112,60 @@ class FieldObject(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Validation target (gold-standard expected results)
+# ---------------------------------------------------------------------------
+
+class ValidationTarget(BaseModel):
+    """
+    A single expected measurement that the execution layer should verify.
+
+    Example::
+
+        ValidationTarget(
+            name="final_z",
+            expected_value=0.1,
+            tolerance_pct=1.0,
+            unit="m",
+            dimension="length",
+        )
+    """
+    name: str = Field(description="Human-readable name of the target quantity")
+    expected_value: float = Field(description="Expected numerical value (SI)")
+    tolerance_pct: float = Field(
+        default=5.0,
+        ge=0.0,
+        description="Acceptable relative error, as a percentage of |expected_value|",
+    )
+    unit: str = Field(default="", description="SI unit symbol (e.g. 'm', 'm/s')")
+    dimension: str = Field(default="", description="Physical dimension (e.g. 'length')")
+
+    @field_validator("unit")
+    @classmethod
+    def _unit_must_be_known(cls, v: str) -> str:
+        if v:
+            # Will raise UnknownUnitError if the symbol is not in the registry
+            from src.schema.units import get_unit_info
+            get_unit_info(v)
+        return v
+
+    @field_validator("dimension")
+    @classmethod
+    def _dimension_must_be_known(cls, v: str) -> str:
+        if v:
+            Dimension(v)  # raises ValueError if unknown
+        return v
+
+    def check(self, actual: float) -> bool:
+        """Return True if *actual* is within the declared tolerance."""
+        if self.expected_value == 0.0:
+            return abs(actual) <= self.tolerance_pct / 100.0
+        return (
+            abs(actual - self.expected_value)
+            <= (self.tolerance_pct / 100.0) * abs(self.expected_value)
+        )
+
+
+# ---------------------------------------------------------------------------
 # Top-level PSDL document
 # ---------------------------------------------------------------------------
 
@@ -96,10 +174,38 @@ PhysicsObject = Union[ParticleObject, CircuitPort, FieldObject]
 
 class PSDL(BaseModel):
     """
-    Physical Scene Description Language document.
+    Physical Scene Description Language document — v0.1.
 
-    This is the root model that the LLM produces and the physics engine consumes.
+    This is the *knowledge contract*: the LLM produces it, the physics
+    engine consumes it.  All physical intent is expressed here; the
+    execution layer must not add implicit assumptions.
     """
+    schema_version: str = Field(
+        default="0.1",
+        description="PSDL schema version",
+    )
+    scenario_type: Optional[str] = Field(
+        default=None,
+        description=(
+            "Scenario classifier used by the dispatcher to select a solver. "
+            "Examples: 'free_fall', 'projectile', 'collision'."
+        ),
+    )
+    assumptions: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Explicit modelling assumptions (e.g. 'no air resistance', "
+            "'point mass', 'rigid body')."
+        ),
+    )
+    source_refs: List[str] = Field(
+        default_factory=list,
+        description="Provenance references (textbook, problem set, …).",
+    )
+    validation_targets: List[ValidationTarget] = Field(
+        default_factory=list,
+        description="Expected gold-standard results for post-simulation verification.",
+    )
     world: WorldSettings = Field(default_factory=WorldSettings)
     objects: List[PhysicsObject] = Field(default_factory=list)
     query: Optional[str] = None

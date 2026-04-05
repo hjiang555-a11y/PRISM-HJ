@@ -3,6 +3,14 @@ LLM translator: natural language → PSDL (via Ollama).
 
 This module is the only place that communicates with the Ollama HTTP API.
 It does **not** perform any physics computations.
+
+Layer role (architecture layer 1 — NL Interface)
+-------------------------------------------------
+* :func:`text_to_psdl` — primary entry point; full NL → PSDL translation.
+* :func:`classify_scenario` — lightweight scenario classifier; reserved for
+  future "classify-then-template-fill" routing so the dispatcher can skip
+  the full LLM call for known scenario types.
+* :func:`generate_answer` — post-simulation NL answer generation.
 """
 
 from __future__ import annotations
@@ -31,7 +39,7 @@ _REQUEST_TIMEOUT: int = 300
 SYSTEM_PROMPT: str = """\
 You are a physics scene compiler. Your ONLY job is to convert the user's natural
 language physics problem into a valid JSON object that strictly conforms to the
-PSDL (Physical Scene Description Language) schema below.
+PSDL v0.1 (Physical Scene Description Language) schema below.
 
 RULES (strictly enforced):
 1. Output ONLY raw JSON — no markdown fences, no explanations, no extra text.
@@ -42,13 +50,24 @@ RULES (strictly enforced):
    and dt = 0.01 s (default).
 5. Gravity is [0, 0, -9.8] unless stated otherwise.
 6. The `query` field must be a concise restatement of what the user wants to know.
+7. Set `scenario_type` to the best matching type: "free_fall", "projectile",
+   "collision", or null if unknown.
+8. List explicit physical assumptions in `assumptions`.
+9. `world.ground_plane` must be set explicitly: true only if the scenario
+   involves contact with the ground.
 
 PSDL JSON SCHEMA (with defaults):
 {
+  "schema_version": "0.1",
+  "scenario_type": null,
+  "assumptions": [],
+  "source_refs": [],
+  "validation_targets": [],
   "world": {
     "gravity": [0, 0, -9.8],
     "dt": 0.01,
     "steps": 100,
+    "ground_plane": false,
     "space": {
       "min": [-10, -10, -10],
       "max": [10, 10, 10],
@@ -170,6 +189,30 @@ def text_to_psdl(user_query: str) -> PSDL:
 
     logger.info("PSDL 解析成功：%d 个对象，步数=%d", len(psdl.objects), psdl.world.steps)
     return psdl
+
+
+def classify_scenario(user_query: str) -> str | None:
+    """
+    Lightweight scenario classifier — reserved for future template routing.
+
+    In v0.1 this is a stub that always returns ``None`` (unknown).  A future
+    implementation will call the LLM with a shorter prompt (or a local
+    classifier) to determine the scenario type before deciding whether to
+    use a template or a full NL → PSDL translation.
+
+    Parameters
+    ----------
+    user_query:
+        The user's natural language question.
+
+    Returns
+    -------
+    str or None
+        Scenario type string (e.g. ``"free_fall"``) or ``None`` if unknown.
+    """
+    # TODO v0.2: implement fast LLM-based or rule-based classifier
+    _ = user_query  # parameter reserved for future use
+    return None
 
 
 def generate_answer(user_query: str, final_states: list, temperature: float = 0.3) -> str:
