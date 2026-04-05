@@ -10,6 +10,8 @@ Covers:
 
 from __future__ import annotations
 
+import json
+
 from src.explorer import explore
 from src.explorer.placeholder import (
     EXPLORER_RESERVED_MESSAGE,
@@ -70,8 +72,11 @@ class TestMainExplorePath:
         out = capsys.readouterr().out
         assert EXPLORER_RESERVED_MESSAGE in out
         assert "Structured explorer result:" in out
-        assert '"mode": "explore"' in out
-        assert '"status": "reserved"' in out
+        json_blob = out.split("Structured explorer result:\n", maxsplit=1)[1].strip()
+        parsed = json.loads(json_blob)
+        assert parsed["mode"] == "explore"
+        assert parsed["status"] == "reserved"
+        assert parsed["results"] == []
 
     def test_explore_does_not_enter_dispatch(self, monkeypatch):
         """When --explore is set, dispatch_with_validation must NOT be called."""
