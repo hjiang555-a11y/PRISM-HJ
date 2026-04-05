@@ -120,7 +120,7 @@ python -m pytest tests/ -v
 
 项目已预留探索模式，用于未来支持参数空间探索、有趣性度量、场景组合与假设生成等能力。当前尚未实现真实探索算法。
 
-运行 `--explore` 时，程序会返回并显示一个**结构化占位结果**，其中包含固定的 `mode/status/message/results` 外层协议；当前 `results` 为空列表。该模式不会进入正常的确定性模拟主流程，因此对现有 deterministic workflow 零影响。
+运行 `--explore` 时，程序会返回并显示一个**结构化占位结果**，其中包含固定的 `mode/status/message/results` 外层协议；当前 `results` 为空列表。 该模式不会进入正常的确定性模拟主流程，因此对现有 deterministic workflow 零影响。
 
 ---
 
