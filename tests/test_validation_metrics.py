@@ -79,7 +79,7 @@ class TestFreeFallDerivedMetrics:
     def test_max_height_upward_throw(self):
         """Upward throw: v0z>0, max_height = z0 + v0z²/(2g)."""
         h, v0z, g = 0.0, 10.0, 9.8
-        expected_max_h = h + v0z ** 2 / (2.0 * g)   # ≈ 5.102 m
+        expected_max_h = h + v0z ** 2 / (2.0 * g)
         psdl = ff_build(height=h, v0z=v0z, g=g, duration=0.5,
                         include_derived_metrics=True)
         states = _states(z=0.0)

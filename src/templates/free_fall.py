@@ -120,7 +120,9 @@ def build_psdl(
     ]
 
     if include_derived_metrics:
-        # max_height: peak z reached; equals z0 when v0z <= 0 (pure drop)
+        # max_height: peak z reached (same formula as _extract_max_height in runner.py)
+        #   v0z > 0 → z0 + v0z² / (2g)   (object rises then falls)
+        #   v0z ≤ 0 → z0                  (object falls immediately)
         max_height_exact = height + v0z ** 2 / (2.0 * g) if v0z > 0.0 else height
 
         # range: pure vertical motion → zero horizontal displacement
