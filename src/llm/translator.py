@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, Dict
 
 import requests
@@ -193,12 +194,26 @@ def text_to_psdl(user_query: str) -> PSDL:
 
 def classify_scenario(user_query: str) -> str | None:
     """
-    Lightweight scenario classifier — reserved for future template routing.
+    Lightweight rule-based scenario classifier.
 
-    In v0.1 this is a stub that always returns ``None`` (unknown).  A future
-    implementation will call the LLM with a shorter prompt (or a local
-    classifier) to determine the scenario type before deciding whether to
-    use a template or a full NL → PSDL translation.
+    Uses regex patterns to identify the most likely physics scenario type
+    from the user's natural language question, supporting both Chinese and
+    English input.  If no pattern matches, returns ``None`` so the full
+    LLM translation path is used as a fallback.
+
+    Supported scenario types (v0.2)
+    --------------------------------
+    ``"free_fall"``
+        Vertical drop under gravity, no horizontal component in initial
+        velocity.  Examples: 自由落体, dropped from height, falls from rest.
+
+    ``"projectile"``
+        Horizontal or angled throw — object launched with non-zero horizontal
+        velocity.  Examples: 抛体, 水平抛出, projectile motion.
+
+    ``"collision"``
+        Two or more objects interacting via impact.  Examples: 碰撞, collision,
+        collide, elastic/inelastic.
 
     Parameters
     ----------
@@ -208,10 +223,81 @@ def classify_scenario(user_query: str) -> str | None:
     Returns
     -------
     str or None
-        Scenario type string (e.g. ``"free_fall"``) or ``None`` if unknown.
+        Scenario type string or ``None`` if classification is uncertain.
     """
-    # TODO v0.2: implement fast LLM-based or rule-based classifier
-    _ = user_query  # parameter reserved for future use
+    if not user_query or not user_query.strip():
+        return None
+    text = user_query.lower()
+
+    # ------------------------------------------------------------------ #
+    # free_fall patterns (Chinese + English)                              #
+    # ------------------------------------------------------------------ #
+    _FREE_FALL_PATTERNS = [
+        r'自由落体',
+        r'自由下落',
+        r'从.*高.*?(落下|下落|落体)',
+        r'从高度',
+        r'\bfree[\s\-]?fall\b',
+        r'\bdrops?\s+from\b',
+        r'\bdropped\s+from\b',
+        r'\bfalls?\s+from\b',
+        r'\bfallen?\s+from\b',
+        r'\breleased?\s+from\b',
+        r'\bdropped?\s+from\s+(a\s+)?height\b',
+        r'\bvertical\s+drop\b',
+    ]
+
+    # ------------------------------------------------------------------ #
+    # projectile patterns                                                 #
+    # ------------------------------------------------------------------ #
+    _PROJECTILE_PATTERNS = [
+        r'抛体',
+        r'水平抛',
+        r'平抛',
+        r'斜抛',
+        r'以.*速度.*水平',
+        r'水平.*速度.*抛',
+        r'\bprojectile\b',
+        r'\bhorizontally?\s+thrown?\b',
+        r'\bthrown?\s+horizontally?\b',
+        r'\blaunched?\s+(at\s+an?\s+angle|horizontally?)\b',
+        r'\binitial\s+horizontal\s+velocity\b',
+    ]
+
+    # ------------------------------------------------------------------ #
+    # collision patterns                                                  #
+    # ------------------------------------------------------------------ #
+    _COLLISION_PATTERNS = [
+        r'碰撞',
+        r'碰后',
+        r'相撞',
+        r'弹性碰',
+        r'非弹性碰',
+        r'\bcollision\b',
+        r'\bcollide[sd]?\b',
+        r'\bimpact\b',
+        r'\bstrike[sd]?\b',
+        r'\belastic\s+collision\b',
+        r'\binelastic\s+collision\b',
+    ]
+
+    # Order matters: check more specific patterns first
+    for pattern in _FREE_FALL_PATTERNS:
+        if re.search(pattern, text):
+            logger.debug("classify_scenario: matched free_fall (pattern=%r)", pattern)
+            return "free_fall"
+
+    for pattern in _PROJECTILE_PATTERNS:
+        if re.search(pattern, text):
+            logger.debug("classify_scenario: matched projectile (pattern=%r)", pattern)
+            return "projectile"
+
+    for pattern in _COLLISION_PATTERNS:
+        if re.search(pattern, text):
+            logger.debug("classify_scenario: matched collision (pattern=%r)", pattern)
+            return "collision"
+
+    logger.debug("classify_scenario: no pattern matched, returning None")
     return None
 
 

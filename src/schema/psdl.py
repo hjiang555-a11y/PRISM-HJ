@@ -19,6 +19,52 @@ from pydantic import BaseModel, Field, field_validator
 
 from src.schema.units import Dimension, validate_unit_for_dimension
 
+# ---------------------------------------------------------------------------
+# Source reference
+# ---------------------------------------------------------------------------
+
+# Valid roles a source reference can play within a PSDL document.
+SOURCE_REF_ROLES = frozenset({
+    "primary_template_source",
+    "secondary_reference",
+    "units_reference",
+    "metrology_reference",
+    "conceptual_reference",
+})
+
+
+class SourceRef(BaseModel):
+    """
+    A structured reference to an entry in ``data/sources/registry.yaml``.
+
+    Attributes
+    ----------
+    source_id:
+        The ``id`` key of the source in the registry (e.g.
+        ``"openstax_university_physics_v1"``).
+    role:
+        How this source is used in the current document.  Must be one of:
+
+        * ``primary_template_source`` — the main textbook basis for the template
+        * ``secondary_reference`` — supporting or cross-check reference
+        * ``units_reference`` — source for SI unit definitions (standards only)
+        * ``metrology_reference`` — source for metrology / time-freq terms
+        * ``conceptual_reference`` — conceptual explanation only
+    """
+
+    source_id: str = Field(description="Registry entry id from data/sources/registry.yaml")
+    role: str = Field(description="Role of this source in the document")
+
+    @field_validator("role")
+    @classmethod
+    def _role_must_be_valid(cls, v: str) -> str:
+        if v not in SOURCE_REF_ROLES:
+            raise ValueError(
+                f"Unknown source role {v!r}. "
+                f"Valid roles: {sorted(SOURCE_REF_ROLES)}"
+            )
+        return v
+
 
 # ---------------------------------------------------------------------------
 # Boundary & World
@@ -198,9 +244,13 @@ class PSDL(BaseModel):
             "'point mass', 'rigid body')."
         ),
     )
-    source_refs: List[str] = Field(
+    source_refs: List[Union[SourceRef, str]] = Field(
         default_factory=list,
-        description="Provenance references (textbook, problem set, …).",
+        description=(
+            "Provenance references. Prefer structured SourceRef objects "
+            "linking to entries in data/sources/registry.yaml. "
+            "Plain strings are accepted for backward compatibility."
+        ),
     )
     validation_targets: List[ValidationTarget] = Field(
         default_factory=list,

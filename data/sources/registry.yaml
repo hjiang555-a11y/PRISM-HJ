@@ -1,0 +1,168 @@
+# PRISM-HJ Reference Source Registry
+# Version: v0.2
+# Description: Authoritative registry of all approved reference sources.
+#   - tier_1_authoritative: primary template sources for mechanics problems
+#   - tier_2_high_quality_educational: secondary/conceptual references
+#   - standards_only: unit definitions and time/frequency metrology ONLY
+#   - pending: awaiting review, must not be used in production templates
+#
+# IMPORTANT: NIST and ITU entries are restricted to units/metrology uses only.
+# They must NOT be used as primary_template_source for mechanics topics.
+
+sources:
+
+  - id: openstax_university_physics_v1
+    title: "University Physics, Volume 1"
+    organization: OpenStax
+    url: "https://openstax.org/details/books/university-physics-volume-1"
+    tier: tier_1_authoritative
+    license: "CC BY 4.0"
+    subject_areas:
+      - mechanics
+      - kinematics
+      - dynamics
+      - energy
+      - momentum
+      - rotational_motion
+    allowed_uses:
+      - primary_template_source
+      - secondary_reference
+      - conceptual_reference
+      - validation_case_basis
+    status: active
+    notes: >
+      Gold-standard open textbook for classical mechanics. Covers free fall,
+      projectile motion, collisions, and other core kinematics topics.
+      Preferred primary source for Tier-1 mechanics templates.
+
+  - id: openstax_college_physics_2e
+    title: "College Physics 2e"
+    organization: OpenStax
+    url: "https://openstax.org/details/books/college-physics-2e"
+    tier: tier_1_authoritative
+    license: "CC BY 4.0"
+    subject_areas:
+      - mechanics
+      - kinematics
+      - dynamics
+      - waves
+      - thermodynamics
+    allowed_uses:
+      - primary_template_source
+      - secondary_reference
+      - conceptual_reference
+      - validation_case_basis
+    status: active
+    notes: >
+      Introductory physics textbook suitable for algebra-based courses.
+      Good source for standard problem archetypes and worked examples.
+
+  - id: mit_ocw_physics
+    title: "MIT OpenCourseWare — Classical Mechanics (8.01) and Electromagnetism (8.02)"
+    organization: "MIT OpenCourseWare"
+    url: "https://ocw.mit.edu/courses/8-01sc-classical-mechanics-fall-2016/"
+    tier: tier_1_authoritative
+    license: "CC BY-NC-SA 4.0"
+    subject_areas:
+      - mechanics
+      - kinematics
+      - dynamics
+      - energy
+      - momentum
+      - oscillations
+      - electromagnetism
+    allowed_uses:
+      - primary_template_source
+      - secondary_reference
+      - conceptual_reference
+      - validation_case_basis
+    status: active
+    notes: >
+      MIT's flagship undergraduate physics courses. Problem sets and lecture
+      notes provide authoritative worked examples for mechanics scenarios.
+
+  - id: feynman_lectures_online
+    title: "The Feynman Lectures on Physics (online edition)"
+    organization: "Caltech / The Feynman Lectures Website"
+    url: "https://www.feynmanlectures.caltech.edu/"
+    tier: tier_2_high_quality_educational
+    license: "All rights reserved — free to read online"
+    subject_areas:
+      - mechanics
+      - electromagnetism
+      - quantum_mechanics
+      - statistical_mechanics
+    allowed_uses:
+      - secondary_reference
+      - conceptual_reference
+    status: active
+    notes: >
+      Deep conceptual explanations of physics. Excellent for conceptual
+      references and secondary verification. Not suitable as primary template
+      source because worked numeric examples are less structured.
+
+  - id: motion_mountain
+    title: "Motion Mountain — The Adventure of Physics"
+    organization: "Motion Mountain / Christoph Schiller"
+    url: "https://www.motionmountain.net/"
+    tier: tier_2_high_quality_educational
+    license: "CC BY-NC-ND 3.0"
+    subject_areas:
+      - mechanics
+      - electromagnetism
+      - quantum_mechanics
+      - relativity
+      - thermodynamics
+    allowed_uses:
+      - secondary_reference
+      - conceptual_reference
+    status: active
+    notes: >
+      Free comprehensive physics textbook with broad coverage. Good for
+      conceptual cross-referencing. Not the primary source for numeric
+      problem templates due to less structured problem sets.
+
+  - id: nist_time_frequency_division
+    title: "NIST Time and Frequency Division — Publications and Standards"
+    organization: "National Institute of Standards and Technology (NIST)"
+    url: "https://www.nist.gov/time-frequency"
+    tier: standards_only
+    license: "U.S. Government public domain"
+    subject_areas:
+      - si_units
+      - time_standards
+      - frequency_standards
+      - metrology
+    allowed_uses:
+      - units_reference
+      - metrology_terms
+      - time_frequency_reference
+    status: active
+    notes: >
+      AUTHORITATIVE for SI unit definitions (especially the second) and
+      time/frequency metrology standards. RESTRICTED USE: must NOT be used
+      as a template source for general mechanics problems (free fall,
+      projectile, collision, etc.). Suitable only for unit definition
+      layers and metrology semantic boundaries.
+
+  - id: itu_time_frequency_handbook
+    title: "ITU-R Handbook on Time and Frequency"
+    organization: "International Telecommunication Union (ITU)"
+    url: "https://www.itu.int/pub/R-HDB-TF"
+    tier: standards_only
+    license: "ITU copyright — free to read online"
+    subject_areas:
+      - time_standards
+      - frequency_standards
+      - metrology
+      - telecommunications_timing
+    allowed_uses:
+      - units_reference
+      - metrology_terms
+      - time_frequency_reference
+    status: active
+    notes: >
+      International standard reference for time and frequency metrology.
+      RESTRICTED USE: must NOT be used as a template source for general
+      mechanics problems (free fall, projectile, collision, etc.). Suitable
+      only for time/frequency unit and metrology term definitions.

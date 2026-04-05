@@ -25,12 +25,14 @@ Design notes
   corresponding solver module.
 * The analytic solver is always preferred when available because it
   is exact (no integration error) and does not require PyBullet.
+* :func:`dispatch_with_validation` extends :func:`dispatch` by also
+  running the PSDL validation targets against the solver results.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from src.schema.psdl import PSDL
 
@@ -100,3 +102,42 @@ def dispatch(psdl: PSDL) -> List[Dict]:
     # Default: PyBullet numerical integration
     from src.physics.engine import simulate_psdl
     return simulate_psdl(psdl)
+
+
+def dispatch_with_validation(psdl: PSDL) -> Dict[str, Any]:
+    """
+    Route *psdl* to the appropriate solver and run validation targets.
+
+    This is the preferred entry point when you need both simulation
+    results and a structured validation summary in one call.
+
+    Parameters
+    ----------
+    psdl:
+        Validated PSDL document.
+
+    Returns
+    -------
+    Dict with keys:
+
+    ``states``
+        Final particle states (same as :func:`dispatch` return value).
+    ``validation_results``
+        List of per-target result dicts from
+        :func:`~src.validation.runner.run_validation`.
+
+    Raises
+    ------
+    ValueError
+        Propagated from the selected solver on bad input.
+    """
+    states = dispatch(psdl)
+
+    from src.validation.runner import run_validation
+    validation_results = run_validation(psdl, states)
+
+    return {
+        "states": states,
+        "validation_results": validation_results,
+    }
+
