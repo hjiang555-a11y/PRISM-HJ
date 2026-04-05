@@ -39,8 +39,8 @@ class ExplorerResult(TypedDict):
     mode: Literal["explore"]
     status: Literal["reserved"]
     message: str
-    base_psdl: Any | None
-    exploration_config: dict[str, Any] | None
+    base_psdl: Optional[Any]
+    exploration_config: Optional[dict[str, Any]]
     results: list[Any]
     metadata: ExplorerMetadata
 
