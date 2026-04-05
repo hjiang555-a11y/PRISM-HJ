@@ -1,5 +1,5 @@
 """
-ValidationTarget auto-execution infrastructure — v0.2.
+ValidationTarget auto-execution infrastructure — v0.3.
 
 This module provides a standalone runner that evaluates all
 :class:`~src.schema.psdl.ValidationTarget` entries in a PSDL document
@@ -20,6 +20,10 @@ Design notes
   ``"final_z"`` or ``"final_vz"`` are resolved against the first particle's
   final position/velocity.  This covers v0.1 free-fall scenarios; new names
   can be added to :data:`_EXTRACTORS` as the template library grows.
+* Derived metrics (``max_height``, ``range``, ``time_of_flight``) are
+  registered in :data:`_PSDL_EXTRACTORS` — they require PSDL initial
+  conditions in addition to the final states, so their extractor signature
+  is ``(psdl: PSDL, states: List[Dict]) -> Optional[float]``.
 * The runner never raises on extraction failure — it sets ``passed=False``
   and records an informative message.
 """
@@ -29,7 +33,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
-from src.schema.psdl import PSDL, ValidationTarget
+from src.schema.psdl import PSDL, ParticleObject, ValidationTarget
 from src.schema.units import validate_unit_for_dimension, Dimension
 
 logger = logging.getLogger(__name__)
@@ -81,6 +85,82 @@ _EXTRACTORS: Dict[str, _Extractor] = {
 
 
 # ---------------------------------------------------------------------------
+# PSDL-aware derived metric extractors
+# ---------------------------------------------------------------------------
+# These extractors need both the PSDL document (for initial conditions) and
+# the final states from the solver.  Their signature is:
+#   (psdl: PSDL, states: List[Dict]) -> Optional[float]
+#
+# Currently supported derived metrics
+# ------------------------------------
+# max_height       — peak height (z) reached during the trajectory (m)
+# range            — net horizontal displacement x_final − x₀ (m)
+# time_of_flight   — total simulated flight time dt × steps (s)
+
+_PSDLExtractor = Callable[["PSDL", List[Dict]], Optional[float]]
+
+
+def _extract_max_height(psdl: PSDL, states: List[Dict]) -> Optional[float]:
+    """
+    Analytic peak height for the first particle.
+
+    Formula
+    -------
+    * If v₀z > 0:  z_max = z₀ + v₀z² / (2 · |g_z|)
+    * Otherwise:   z_max = z₀  (object is already falling)
+
+    Applies to both ``free_fall`` and ``projectile`` (horizontal throw has
+    v₀z = 0, so max_height equals the initial height).
+    """
+    particles = [obj for obj in psdl.objects if isinstance(obj, ParticleObject)]
+    if not particles:
+        return None
+    p = particles[0]
+    z0 = p.position[2]
+    v0z = p.velocity[2]
+    g_z = psdl.world.gravity[2]   # negative for downward gravity
+    g_mag = abs(g_z)
+    if g_mag == 0.0:
+        return float(z0)
+    if v0z > 0.0:
+        return float(z0 + v0z ** 2 / (2.0 * g_mag))
+    return float(z0)
+
+
+def _extract_range(psdl: PSDL, states: List[Dict]) -> Optional[float]:
+    """
+    Horizontal range: x_final − x₀.
+
+    Returns 0 for pure vertical scenarios (v₀x = 0, e.g. ``free_fall``).
+    Requires at least one entry in *states*.
+    """
+    if not states:
+        return None
+    particles = [obj for obj in psdl.objects if isinstance(obj, ParticleObject)]
+    x0 = float(particles[0].position[0]) if particles else 0.0
+    pos = states[0].get("position")
+    if pos is None or len(pos) < 1:
+        return None
+    return float(pos[0]) - x0
+
+
+def _extract_time_of_flight(psdl: PSDL, states: List[Dict]) -> Optional[float]:
+    """
+    Total simulated flight time: dt × steps.
+
+    This equals the simulation duration specified in the PSDL world settings.
+    """
+    return float(psdl.world.dt * psdl.world.steps)
+
+
+_PSDL_EXTRACTORS: Dict[str, _PSDLExtractor] = {
+    "max_height":       _extract_max_height,
+    "range":            _extract_range,
+    "time_of_flight":   _extract_time_of_flight,
+}
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -123,7 +203,7 @@ def run_validation(
     results: List[Dict[str, Any]] = []
 
     for target in psdl.validation_targets:
-        result = _evaluate_target(target, states)
+        result = _evaluate_target(target, states, psdl)
         results.append(result)
         level = logging.INFO if result["passed"] else logging.WARNING
         logger.log(level, "validation %s: %s", target.name, result["message"])
@@ -135,6 +215,7 @@ def run_validation(
 def _evaluate_target(
     target: ValidationTarget,
     states: List[Dict],
+    psdl: Optional[PSDL] = None,
 ) -> Dict[str, Any]:
     """Evaluate a single :class:`ValidationTarget`."""
     observed: Optional[float] = None
@@ -142,8 +223,9 @@ def _evaluate_target(
     message = ""
 
     extractor = _EXTRACTORS.get(target.name)
+    psdl_extractor = _PSDL_EXTRACTORS.get(target.name)
 
-    if extractor is None:
+    if extractor is None and psdl_extractor is None:
         message = (
             f"No extractor registered for target {target.name!r}. "
             "Cannot evaluate."
@@ -151,7 +233,16 @@ def _evaluate_target(
         return _result(target, passed=False, observed=None, message=message)
 
     try:
-        observed = extractor(states)
+        if psdl_extractor is not None and psdl is not None:
+            observed = psdl_extractor(psdl, states)
+        elif extractor is not None:
+            observed = extractor(states)
+        else:
+            message = (
+                f"Derived metric {target.name!r} requires PSDL context "
+                "but none was provided."
+            )
+            return _result(target, passed=False, observed=None, message=message)
     except (KeyError, TypeError, IndexError, ValueError) as exc:
         message = f"Extraction error for {target.name!r}: {exc}"
         return _result(target, passed=False, observed=None, message=message)
