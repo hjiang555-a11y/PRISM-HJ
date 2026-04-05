@@ -156,7 +156,7 @@ class TestStandardsOnlyPolicyConstraints:
     def test_standards_only_allows_metrology_uses(self, sources_by_id, source_id):
         entry = sources_by_id[source_id]
         actual_uses = set(entry["allowed_uses"])
-        assert actual_uses & {"units_reference", "metrology_terms", "time_frequency_reference"}, (
+        assert actual_uses & {"units_reference", "metrology_reference"}, (
             f"Standards-only source {source_id!r} should allow at least one metrology use"
         )
 

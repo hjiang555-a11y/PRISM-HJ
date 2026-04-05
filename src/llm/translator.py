@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import requests
 from pydantic import ValidationError
@@ -102,6 +102,15 @@ def text_to_psdl(user_query: str) -> PSDL:
     """
     Translate a natural language physics question into a validated :class:`PSDL`.
 
+    The function follows a *template-first* strategy:
+
+    1. Run the lightweight rule-based :func:`classify_scenario` classifier.
+    2. If a known scenario type is detected, attempt to extract numeric
+       parameters from the query and build the PSDL directly from the
+       corresponding template (no LLM call required).
+    3. If classification fails or parameter extraction is incomplete, fall
+       back to the full LLM (Ollama) translation path.
+
     Parameters
     ----------
     user_query:
@@ -111,6 +120,114 @@ def text_to_psdl(user_query: str) -> PSDL:
     -------
     PSDL
         A validated Pydantic model ready for simulation.
+
+    Raises
+    ------
+    ConnectionError
+        If the Ollama service is unreachable (LLM fallback path only).
+    ValueError
+        If the LLM returns malformed JSON or the JSON does not satisfy the
+        PSDL schema (LLM fallback path only).
+    """
+    # ------------------------------------------------------------------
+    # Step 1: Template-first path
+    # ------------------------------------------------------------------
+    scenario = classify_scenario(user_query)
+
+    if scenario == "free_fall":
+        psdl = _try_template_free_fall(user_query)
+        if psdl is not None:
+            logger.info(
+                "text_to_psdl: free_fall template path used (no LLM call)."
+            )
+            return psdl
+        logger.info(
+            "text_to_psdl: free_fall template extraction incomplete, "
+            "falling back to LLM."
+        )
+
+    elif scenario == "projectile":
+        psdl = _try_template_projectile(user_query)
+        if psdl is not None:
+            logger.info(
+                "text_to_psdl: projectile template path used (no LLM call)."
+            )
+            return psdl
+        logger.info(
+            "text_to_psdl: projectile template extraction incomplete, "
+            "falling back to LLM."
+        )
+
+    elif scenario == "collision":
+        psdl = _try_template_collision(user_query)
+        if psdl is not None:
+            logger.info(
+                "text_to_psdl: collision template path used (no LLM call)."
+            )
+            return psdl
+        logger.info(
+            "text_to_psdl: collision template extraction incomplete, "
+            "falling back to LLM."
+        )
+
+    # ------------------------------------------------------------------
+    # Step 2: LLM fallback
+    # ------------------------------------------------------------------
+    return _text_to_psdl_via_llm(user_query)
+
+
+# ---------------------------------------------------------------------------
+# Template helper functions
+# ---------------------------------------------------------------------------
+
+def _try_template_free_fall(user_query: str) -> Optional[PSDL]:
+    """Return a free_fall PSDL built from the template, or ``None``."""
+    try:
+        from src.templates.extractor import extract_free_fall_params
+        from src.templates.free_fall import build_psdl as build_free_fall
+
+        params = extract_free_fall_params(user_query)
+        if params is None:
+            return None
+        return build_free_fall(**params)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("_try_template_free_fall failed: %s", exc)
+        return None
+
+
+def _try_template_projectile(user_query: str) -> Optional[PSDL]:
+    """Return a projectile PSDL built from the template, or ``None``."""
+    try:
+        from src.templates.extractor import extract_projectile_params
+        from src.templates.projectile import build_psdl as build_projectile
+
+        params = extract_projectile_params(user_query)
+        if params is None:
+            return None
+        return build_projectile(**params)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("_try_template_projectile failed: %s", exc)
+        return None
+
+
+def _try_template_collision(user_query: str) -> Optional[PSDL]:
+    """Return a collision PSDL built from the template, or ``None``."""
+    try:
+        from src.templates.extractor import extract_collision_params
+        from src.templates.collision import build_psdl as build_collision
+
+        params = extract_collision_params(user_query)
+        if params is None:
+            return None
+        return build_collision(**params)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("_try_template_collision failed: %s", exc)
+        return None
+
+
+def _text_to_psdl_via_llm(user_query: str) -> PSDL:
+    """
+    Full LLM-based PSDL translation via Ollama (fallback path).
 
     Raises
     ------
