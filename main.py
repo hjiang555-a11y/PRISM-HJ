@@ -24,6 +24,10 @@ from pathlib import Path
 from src.llm.translator import generate_answer, text_to_psdl
 from src.physics.dispatcher import dispatch_with_validation
 
+# Explorer module is imported lazily inside run_explore() to keep the
+# deterministic simulation path completely free of exploration code.
+# See src/explorer/placeholder.py for future extension notes.
+
 # ---------------------------------------------------------------------------
 # Logging configuration
 # ---------------------------------------------------------------------------
@@ -32,6 +36,36 @@ logging.basicConfig(
     format="[%(levelname)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Explore pipeline (placeholder — does not enter deterministic main path)
+# ---------------------------------------------------------------------------
+
+def run_explore(question: str) -> None:
+    """
+    Enter the exploration placeholder path.
+
+    当前行为：调用 explore() 占位函数并输出提示，然后返回，不进入
+    deterministic simulate_psdl() / dispatch_with_validation() 主路径。
+
+    未来演进方向：
+    - 从 question 构建 base_psdl（模板或 LLM 生成）
+    - 从 world.exploration_config 或命令行参数构建 exploration_config
+    - 调用真正的参数空间漫游、有趣性度量、场景串联等逻辑
+    - 将探索结果汇总后输出或存储
+    """
+    # Import lazily to keep the deterministic main path clean.
+    from src.explorer import explore
+
+    print(f"\n{'=' * 60}")
+    print(f"探索模式 — 问题: {question}")
+    print("=" * 60)
+
+    # base_psdl: 未来将由 text_to_psdl(question) 生成；
+    # exploration_config: 未来将从 PSDL.world.exploration_config 或额外参数读取。
+    # 当前均传入 None 作为占位值。
+    explore(base_psdl=None, exploration_config=None)
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Examples:\n"
             '  python main.py --question "一个2kg的球从高度5米自由落体，1秒后位置和速度？"\n'
             "  python main.py --file examples/questions.txt\n"
+            '  python main.py --explore --question "任何问题"  # 进入探索占位路径\n'
         ),
     )
     group = parser.add_mutually_exclusive_group(required=True)
@@ -107,6 +142,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--file", "-f",
         type=Path,
         help="Path to a text file with one question per line (batch mode).",
+    )
+    parser.add_argument(
+        "--explore",
+        action="store_true",
+        default=False,
+        help=(
+            "进入探索模式（当前为预留占位，尚未实现）。"
+            "激活时不进入确定性模拟主路径。"
+            "需配合 --question 使用。"
+        ),
     )
     parser.add_argument(
         "--verbose", "-v",
@@ -122,6 +167,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
+
+    # --explore: route to the exploration placeholder path (no deterministic simulation)
+    if args.explore:
+        question = args.question or ""
+        run_explore(question)
+        return 0
 
     questions: list[str] = []
 

@@ -110,6 +110,16 @@ class WorldSettings(BaseModel):
         default=["newton_second", "energy_conservation"],
         description="Physical theorems to be honoured by the simulation",
     )
+    exploration_config: Optional[dict] = Field(
+        default=None,
+        description=(
+            "预留字段：探索模式配置。"
+            "当该字段不为空时，表示场景可能进入探索模式（由 --explore 开关激活）。"
+            "当前仅为预留字段，不影响确定性模拟主路径。"
+            "未来将包含参数范围、探索策略（grid/random/bayesian）、"
+            "有趣性度量选择等配置项。"
+        ),
+    )
 
     @field_validator("gravity")
     @classmethod
@@ -120,10 +130,13 @@ class WorldSettings(BaseModel):
 
     def pretty_print(self) -> str:
         """Return a human-readable summary of world settings."""
+        explore_hint = (
+            ", exploration_config=<set>" if self.exploration_config is not None else ""
+        )
         return (
             f"WorldSettings(gravity={self.gravity}, dt={self.dt}s, "
             f"steps={self.steps}, boundary={self.space.boundary_type}, "
-            f"ground_plane={self.ground_plane})"
+            f"ground_plane={self.ground_plane}{explore_hint})"
         )
 
 
