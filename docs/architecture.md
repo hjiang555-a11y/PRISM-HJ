@@ -5,6 +5,12 @@
 PRISM-HJ（Physical Reasoning & Inference System for Mechanics — HJ）采用**四层架构**，
 将"自然语言"与"确定性物理执行"完全解耦，使每一层都可独立测试、替换和审计。
 
+> **架构演进说明**：项目正在从 scenario/solver-centered 架构向 state-set and rule-oriented execution core 转型。
+> 现有 `free_fall`、`projectile`、`collision` 模块保留，当前定位为 legacy / reference / testing-oriented modules。
+> 详见：
+> - [执行核心重构总纲](PRISM_execution_core_rearchitecture.md)
+> - [新执行核心接口草案 v0.1](PRISM_execution_core_interfaces_v0_1.md)
+
 ---
 
 ## 四层架构

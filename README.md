@@ -12,6 +12,29 @@
 
 ---
 
+## 架构更新说明
+
+项目正在从 **scenario / solver-centered architecture** 转向 **state-set and rule-oriented execution core**。
+
+新方向的核心要素：
+
+- **Target-related state sets**：执行核心围绕目标相关状态集展开，而非预定义的题型分类
+- **Spatiotemporal conditions**：时空条件是规则激活与调度的核心依据
+- **Primitive physical rules**：每条规则表达一个基础物理关系，可独立声明和叠加
+- **Persistent interactions**：持续作用（如重力、电场）在整个演化过程中始终贡献
+- **Triggered local interactions**：局部作用（如碰撞、接触力）在条件满足时短时激活
+- **Result assembly**：从状态集演化结果中提取面向目标的物理量输出
+
+未来将支持 **cross-domain rule composition**，例如经典力学与电磁学规则共同作用于同一状态集。`domain` 是规则的命名空间，不是执行时的互斥条件。
+
+现有的 `free_fall`、`projectile`、`collision` 模块**仍然保留**，当前定位为 **legacy / reference / testing-oriented modules**，不再代表执行核心的长期方向。
+
+详细说明见：
+- [`docs/PRISM_execution_core_rearchitecture.md`](docs/PRISM_execution_core_rearchitecture.md)（执行核心重构总纲）
+- [`docs/PRISM_execution_core_interfaces_v0_1.md`](docs/PRISM_execution_core_interfaces_v0_1.md)（新执行核心接口草案 v0.1）
+
+---
+
 ## 四层架构（v0.2）
 
 完整架构说明见 [`docs/architecture.md`](docs/architecture.md)。
