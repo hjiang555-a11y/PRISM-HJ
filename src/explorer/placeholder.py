@@ -18,13 +18,37 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional, TypedDict
+
+
+EXPLORER_RESERVED_MESSAGE = "探索模式已预留，尚未实现。"
+
+
+class ExplorerMetadata(TypedDict):
+    future_capabilities: list[str]
+
+
+class ExplorerResult(TypedDict):
+    """
+    稳定的探索模式占位结果协议。
+
+    当前仅表达“探索模式已预留”，但结构本身可被 CLI 或未来 API 直接消费，
+    以便后续替换为真实 explorer 实现时避免上层接口再次变动。
+    """
+
+    mode: Literal["explore"]
+    status: Literal["reserved"]
+    message: str
+    base_psdl: Optional[Any]
+    exploration_config: Optional[dict[str, Any]]
+    results: list[Any]
+    metadata: ExplorerMetadata
 
 
 def explore(
     base_psdl: Optional[Any],
-    exploration_config: Optional[dict],
-) -> list:
+    exploration_config: Optional[dict[str, Any]],
+) -> ExplorerResult:
     """
     占位探索接口。
 
@@ -36,6 +60,8 @@ def explore(
     - 与 LLM 联动生成可检验假设
 
     当前不实现探索逻辑，只返回/输出保留提示。
+    该返回值是一个稳定的占位协议，用于为未来真实 explorer 的返回格式
+    奠定基础，并让 CLI/上层调用方优先依赖结构化结果而非 stdout 文本。
 
     Parameters
     ----------
@@ -48,8 +74,25 @@ def explore(
 
     Returns
     -------
-    list
-        空列表（占位返回值，未来将返回探索结果集合）。
+    ExplorerResult
+        结构化占位结果；当前 results 为空列表，未来可在保持外层结构稳定的
+        前提下逐步填充真实探索结果。
     """
-    print("探索模式已预留，尚未实现。")
-    return []
+    result: ExplorerResult = {
+        "mode": "explore",
+        "status": "reserved",
+        "message": EXPLORER_RESERVED_MESSAGE,
+        "base_psdl": base_psdl,
+        "exploration_config": exploration_config,
+        "results": [],
+        "metadata": {
+            "future_capabilities": [
+                "parameter_space_search",
+                "interestingness_metrics",
+                "scenario_composition",
+                "llm_hypothesis_generation",
+            ]
+        },
+    }
+    print(EXPLORER_RESERVED_MESSAGE)
+    return result

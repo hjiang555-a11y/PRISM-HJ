@@ -116,6 +116,12 @@ python main.py --file examples/questions.txt
 python -m pytest tests/ -v
 ```
 
+### 5. 探索模式（已预留，未实现）
+
+项目已预留探索模式，用于未来支持参数空间探索、有趣性度量、场景组合与假设生成等能力。当前尚未实现真实探索算法。
+
+运行 `--explore` 时，程序会返回并显示一个**结构化占位结果**，其中包含固定的 `mode/status/message/results` 外层协议；当前 `results` 为空列表。 该模式不会进入正常的确定性模拟主流程，因此对现有 deterministic workflow 零影响。
+
 ---
 
 ## 项目结构
@@ -150,6 +156,9 @@ PRISM-HJ/
 │   │   └── collision.py     # collision 场景模板（v0.2 新增）
 │   ├── validation/
 │   │   └── runner.py        # ValidationTarget 自动执行
+│   ├── explorer/
+│   │   ├── __init__.py      # exploration mode 入口（预留）
+│   │   └── placeholder.py   # 结构化 explorer 占位结果协议
 │   └── llm/
 │       └── translator.py    # 模板优先路径 + Ollama LLM fallback
 ├── tests/
@@ -266,6 +275,12 @@ CLI 现在始终打印 solver 路径和验证摘要：
 
 ---
 
+## Exploration mode（reserved）
+
+PRISM-HJ currently reserves an exploration mode for future creative extensions such as parameter sweeps, interestingness metrics, scenario composition, and hypothesis generation. This mode is not implemented yet. Running with `--explore` currently returns and displays a structured placeholder result, and does not affect the normal deterministic simulation workflow.
+
+---
+
 ## 设计原则
 
 1. **PSDL 优先于引擎** — 物理意图在契约层完整表达，执行层只是实现细节
@@ -309,4 +324,3 @@ CLI 现在始终打印 solver 路径和验证摘要：
 - [DeepSeek](https://deepseek.com/) 提供高性能开源模型
 - [Ollama](https://ollama.com/) 简化本地 LLM 部署
 - [PyBullet](https://pybullet.org/) 提供可靠的物理模拟
-
