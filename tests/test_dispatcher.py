@@ -13,6 +13,8 @@ import pytest
 
 from src.physics.dispatcher import (
     SOLVER_ANALYTIC_FREE_FALL,
+    SOLVER_ANALYTIC_PROJECTILE,
+    SOLVER_ANALYTIC_COLLISION_1D,
     SOLVER_PYBULLET,
     dispatch,
     select_solver,
@@ -54,8 +56,16 @@ class TestSelectSolver:
         assert select_solver(psdl) == SOLVER_PYBULLET
 
     def test_unknown_type_routes_to_pybullet(self):
-        psdl = _minimal_psdl("projectile")
+        psdl = _minimal_psdl("optics")  # truly unknown scenario
         assert select_solver(psdl) == SOLVER_PYBULLET
+
+    def test_projectile_routes_to_analytic(self):
+        psdl = _minimal_psdl("projectile")
+        assert select_solver(psdl) == SOLVER_ANALYTIC_PROJECTILE
+
+    def test_collision_routes_to_analytic(self):
+        psdl = _minimal_psdl("collision")
+        assert select_solver(psdl) == SOLVER_ANALYTIC_COLLISION_1D
 
     def test_free_fall_case_insensitive(self):
         psdl = _minimal_psdl("FREE_FALL")

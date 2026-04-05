@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 from src.llm.translator import generate_answer, text_to_psdl
-from src.physics.engine import simulate_psdl
+from src.physics.dispatcher import dispatch_with_validation
 
 # ---------------------------------------------------------------------------
 # Logging configuration
@@ -39,21 +39,41 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def run_pipeline(question: str) -> None:
-    """Execute the full NL → PSDL → Simulation → NL pipeline for one question."""
+    """Execute the full NL → PSDL → Simulation → Validation → NL pipeline."""
     print(f"\n{'=' * 60}")
     print(f"问题: {question}")
     print("=" * 60)
 
-    # Step 1: Translate natural language to PSDL
+    # Step 1: Translate natural language to PSDL (template-first, then LLM)
     logger.info("Translating natural language to PSDL...")
     psdl = text_to_psdl(question)
 
     logger.info("PSDL (JSON):\n%s", psdl.pretty_print())
 
-    # Step 2: Run physics simulation
+    # Step 2: Dispatch to appropriate solver + run validation
     logger.info("Running physics simulation...")
-    final_states = simulate_psdl(psdl)
-    logger.info("Final states: %s", json.dumps(final_states, ensure_ascii=False))
+    result = dispatch_with_validation(psdl)
+    final_states = result["states"]
+    solver_used = result["solver_used"]
+    validation_results = result["validation_results"]
+
+    logger.info(
+        "Solver: %s | Final states: %s",
+        solver_used,
+        json.dumps(final_states, ensure_ascii=False),
+    )
+
+    # Print solver and validation summary (always visible to CLI user)
+    print(f"\n[Solver: {solver_used}]")
+    if validation_results:
+        passed = sum(1 for r in validation_results if r["passed"])
+        total = len(validation_results)
+        print(f"[Validation: {passed}/{total} passed]")
+        for r in validation_results:
+            status = "PASS" if r["passed"] else "FAIL"
+            print(f"  {r['target']}: {status} — {r['message']}")
+    else:
+        print("[Validation: no targets defined]")
 
     # Step 3: Generate natural language answer
     logger.info("Generating natural language answer...")

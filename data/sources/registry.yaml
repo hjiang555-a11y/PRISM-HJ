@@ -135,8 +135,7 @@ sources:
       - metrology
     allowed_uses:
       - units_reference
-      - metrology_terms
-      - time_frequency_reference
+      - metrology_reference
     status: active
     notes: >
       AUTHORITATIVE for SI unit definitions (especially the second) and
@@ -158,8 +157,7 @@ sources:
       - telecommunications_timing
     allowed_uses:
       - units_reference
-      - metrology_terms
-      - time_frequency_reference
+      - metrology_reference
     status: active
     notes: >
       International standard reference for time and frequency metrology.

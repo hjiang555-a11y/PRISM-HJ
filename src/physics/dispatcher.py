@@ -1,21 +1,25 @@
 """
-Solver dispatcher — v0.1.
+Solver dispatcher — v0.2.
 
 The dispatcher is the entry-point for the *knowledge compiler* layer
 (layer 3 in the four-layer architecture).  It inspects the PSDL
 ``scenario_type`` field and routes the document to the most appropriate
 solver backend.
 
-Routing table (v0.1)
+Routing table (v0.2)
 --------------------
-+----------------+-------------------------------------+
-| scenario_type  | solver                              |
-+================+=====================================+
-| ``free_fall``  | :func:`analytic.solve_free_fall`    |
-+----------------+-------------------------------------+
-| ``None`` / any | :func:`engine.simulate_psdl`        |
-| other value    | (PyBullet numerical integration)    |
-+----------------+-------------------------------------+
++-------------------+---------------------------------------------+
+| scenario_type     | solver                                      |
++===================+=============================================+
+| ``free_fall``     | :func:`analytic.solve_free_fall`            |
++-------------------+---------------------------------------------+
+| ``projectile``    | :func:`analytic.solve_projectile`           |
++-------------------+---------------------------------------------+
+| ``collision``     | :func:`analytic.solve_collision_1d_elastic` |
++-------------------+---------------------------------------------+
+| ``None`` / any    | :func:`engine.simulate_psdl`                |
+| other value       | (PyBullet numerical integration)            |
++-------------------+---------------------------------------------+
 
 Design notes
 ------------
@@ -26,7 +30,8 @@ Design notes
 * The analytic solver is always preferred when available because it
   is exact (no integration error) and does not require PyBullet.
 * :func:`dispatch_with_validation` extends :func:`dispatch` by also
-  running the PSDL validation targets against the solver results.
+  running the PSDL validation targets against the solver results and
+  returning the ``solver_used`` identifier.
 """
 
 from __future__ import annotations
@@ -40,6 +45,8 @@ logger = logging.getLogger(__name__)
 
 # Solver identifiers exposed for introspection / testing.
 SOLVER_ANALYTIC_FREE_FALL = "analytic_free_fall"
+SOLVER_ANALYTIC_PROJECTILE = "analytic_projectile"
+SOLVER_ANALYTIC_COLLISION_1D = "analytic_collision_1d_elastic"
 SOLVER_PYBULLET = "pybullet"
 
 
@@ -64,6 +71,12 @@ def select_solver(psdl: PSDL) -> str:
 
     if scenario == "free_fall":
         return SOLVER_ANALYTIC_FREE_FALL
+
+    if scenario == "projectile":
+        return SOLVER_ANALYTIC_PROJECTILE
+
+    if scenario == "collision":
+        return SOLVER_ANALYTIC_COLLISION_1D
 
     # Default: fall back to PyBullet numerical integration
     return SOLVER_PYBULLET
@@ -99,6 +112,14 @@ def dispatch(psdl: PSDL) -> List[Dict]:
         from src.physics.analytic import solve_free_fall
         return solve_free_fall(psdl)
 
+    if solver_id == SOLVER_ANALYTIC_PROJECTILE:
+        from src.physics.analytic import solve_projectile
+        return solve_projectile(psdl)
+
+    if solver_id == SOLVER_ANALYTIC_COLLISION_1D:
+        from src.physics.analytic import solve_collision_1d_elastic
+        return solve_collision_1d_elastic(psdl)
+
     # Default: PyBullet numerical integration
     from src.physics.engine import simulate_psdl
     return simulate_psdl(psdl)
@@ -122,6 +143,9 @@ def dispatch_with_validation(psdl: PSDL) -> Dict[str, Any]:
 
     ``states``
         Final particle states (same as :func:`dispatch` return value).
+    ``solver_used``
+        Identifier of the solver that was selected (one of the
+        ``SOLVER_*`` constants defined in this module).
     ``validation_results``
         List of per-target result dicts from
         :func:`~src.validation.runner.run_validation`.
@@ -131,6 +155,7 @@ def dispatch_with_validation(psdl: PSDL) -> Dict[str, Any]:
     ValueError
         Propagated from the selected solver on bad input.
     """
+    solver_id = select_solver(psdl)
     states = dispatch(psdl)
 
     from src.validation.runner import run_validation
@@ -138,6 +163,7 @@ def dispatch_with_validation(psdl: PSDL) -> Dict[str, Any]:
 
     return {
         "states": states,
+        "solver_used": solver_id,
         "validation_results": validation_results,
     }
 
