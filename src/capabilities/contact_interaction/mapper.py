@@ -19,10 +19,16 @@ Admission 字段说明
   ["at_least_two_entities", "pre_collision_velocity_per_entity", "mass_per_entity"]
 - missing_entry_inputs: 从 ProblemSemanticSpec 中未能提取到的必要入口要素（动态计算）
 
-注意：hardcoded 的 applicability_conditions / assumptions / validity_limits 是
-当前原型的默认物理假设，来源于 contact_interaction 能力本身，而非从 ProblemSemanticSpec
-中语义提取。后续如需基于语义线索动态调整，应从 problem_spec.rule_extraction_inputs
-中读取覆盖值。
+信息来源三层优先级（P0 第四步明确）
+------------------------------------
+A. 语义层 hints（interaction_hints / assumption_hints）
+   —— 来自 extraction pipeline 的结构化推断，优先消费
+B. explicit_conditions 的量纲/物理量线索
+   —— 条件名称关键词匹配，次优先
+C. 原型阶段 fallback 默认值
+   —— 仅当 A 和 B 均无信息时使用，作为最后兜底
+
+代码结构注释标注了每段逻辑属于哪一层来源。
 """
 
 from __future__ import annotations
@@ -69,13 +75,28 @@ def build_contact_interaction_spec(
         if entity:
             pre_trigger.setdefault(entity, {})[cond.get("name", "unknown")] = cond.get("value")
 
-    # 接触模型提示从 rule_extraction_inputs 中读取（优先来自语义层）
-    # 默认候选弹性碰撞为原型 fallback
-    contact_hints: list = list(
-        problem_spec.rule_extraction_inputs.get("contact_model_hints", [])
-    )
+    # ------------------------------------------------------------------
+    # 接触模型提示（contact_model_hints）
+    # 信息来源优先级：A → B → C
+    # ------------------------------------------------------------------
+
+    # A. 语义层：来自 assumption_hints（extraction pipeline 推断）
+    # 注：inelastic 优先于 elastic（inelastic 是更强的约束）；
+    #     若 assumption_hints 同时含两者（异常情况），以 inelastic 为准
+    contact_hints: list = []
+    if "inelastic_collision" in problem_spec.assumption_hints:
+        contact_hints.append("inelastic")
+    elif "elastic_collision" in problem_spec.assumption_hints:
+        contact_hints.append("elastic")
+
+    # B. 来自 rule_extraction_inputs（上层显式传入的线索，优先于 C）
     if not contact_hints:
-        # 原型默认 fallback：尚无语义线索时使用弹性碰撞作为候选模型
+        contact_hints = list(
+            problem_spec.rule_extraction_inputs.get("contact_model_hints", [])
+        )
+
+    # C. 原型默认 fallback：A 和 B 均无信息时使用弹性碰撞作为候选模型
+    if not contact_hints:
         contact_hints = ["elastic"]
 
     trigger_reqs = []
@@ -87,40 +108,72 @@ def build_contact_interaction_spec(
 
     missing_runtime: list = list(problem_spec.unresolved_items)
 
-    # --- Admission 层：计算 missing_entry_inputs ---
-    missing_entry: list = []
+    # ------------------------------------------------------------------
+    # Admission 层：计算 missing_entry_inputs
+    # 对每个必要入口要素，按 A → B → C 顺序判断是否已知
+    # ------------------------------------------------------------------
 
-    # 收集明确给出条件的名称集合，用于粗粒度判断
+    # B. 来自 explicit_conditions 的量纲/物理量线索（名称关键词匹配）
     condition_names = {cond.get("name", "") for cond in problem_spec.explicit_conditions}
 
-    # 检查是否至少有两个实体（接触交互的基本前提）
+    missing_entry: list = []
+
+    # --- 至少两个实体 ---
+    # A. 语义层：interaction_hints 含 collision_possible 强烈提示有两个实体，
+    #    但 admission 仍依赖实体列表实际长度（语义 hint 不能替代实体数量判断）
     if len(entity_ids) < 2:
         missing_entry.append("at_least_two_entities")
 
-    # 判断是否有碰前速度信息
+    # --- 碰前速度 ---
+    # A. 语义层：当前无直接速度已知 hint（需结合 explicit_conditions 或 pre_trigger）
+    _has_velocity_from_semantics = False
+    # B. 显式条件关键词
     _velocity_keywords = {"velocity", "speed", "v", "vx", "vy", "vz", "initial_velocity", "v0", "v0x", "v0y", "v_before"}
-    if not (_velocity_keywords & condition_names) and not pre_trigger:
+    _has_velocity_from_conditions = bool(_velocity_keywords & condition_names) or bool(pre_trigger)
+    # 汇总判断
+    if not _has_velocity_from_semantics and not _has_velocity_from_conditions:
         missing_entry.append("pre_collision_velocity_per_entity")
 
-    # 判断是否有质量信息
+    # --- 质量 ---
+    # A. 语义层：当前无直接质量 hint
+    _has_mass_from_semantics = False
+    # B. 显式条件关键词
     _mass_keywords = {"mass", "m", "mass_kg", "weight"}
-    if not (_mass_keywords & condition_names):
+    _has_mass_from_conditions = bool(_mass_keywords & condition_names)
+    # 汇总判断
+    if not _has_mass_from_semantics and not _has_mass_from_conditions:
         missing_entry.append("mass_per_entity")
 
-    # 准入条件字段（Capability Admission Fields）
-    # 注：以下为 contact_interaction 能力本身的默认物理假设，非从语义层动态提取
+    # ------------------------------------------------------------------
+    # 准入条件字段（applicability_conditions / assumptions / validity_limits）
+    # 信息来源优先级：A → C
+    # ------------------------------------------------------------------
+
     applicability_conditions = [
         "问题中存在两个或以上可识别的物理实体",
         "存在可识别的接触或碰撞事件",
         "交互可以用有限时刻的冲量近似描述（碰撞过程远短于整体运动时间尺度）",
     ]
-    assumptions = [
-        # 原型默认假设；若 contact_model_hints 来自语义层，碰撞类型可被覆盖
+
+    # assumptions 根据 semantic hints（A 层）动态调整，未知时使用原型默认值（C 层）
+    assumptions: list = []
+
+    # A. 语义层：根据 assumption_hints 推断碰撞类型
+    if "inelastic_collision" in problem_spec.assumption_hints:
+        assumptions.append("非弹性碰撞（来自语义层 assumption_hints：inelastic_collision）")
+    elif "elastic_collision" in problem_spec.assumption_hints:
+        assumptions.append("弹性碰撞（来自语义层 assumption_hints：elastic_collision）")
+    else:
+        # C. 原型默认 fallback
+        assumptions.append("默认弹性碰撞（动能守恒），除非 contact_model_hints 中指定非弹性类型")
+
+    # C. 原型默认假设（与语义层无关的物理基础假设）
+    assumptions.extend([
         "碰撞为完全瞬时冲击（碰撞时间 Δt → 0，冲量-动量定理适用）",
-        "默认弹性碰撞（动能守恒），除非 contact_model_hints 中指定非弹性类型",
         "碰撞期间外力（如重力）的冲量相对碰撞冲量可忽略",
         "刚体近似：碰撞过程中实体不发生形变",
-    ]
+    ])
+
     validity_limits = [
         "碰撞持续时间远小于整体运动时间尺度",
         "实体间不发生持续接触（持续接触力需引入不同 capability）",
