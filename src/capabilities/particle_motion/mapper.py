@@ -33,6 +33,8 @@ C. 原型阶段 fallback 默认值
 
 from __future__ import annotations
 
+import re
+
 from src.capabilities.common.base import ApplicabilityEvalItem, ValidityWarning
 from src.capabilities.particle_motion.spec import ParticleMotionCapabilitySpec
 from src.problem_semantic.models import ProblemSemanticSpec
@@ -273,8 +275,7 @@ def build_particle_motion_spec(
     _source_text = problem_spec.source_input.lower()
 
     # 警告 1：文本中出现旋转/刚体暗示，但仍按质点能力处理
-    import re as _re
-    if _re.search(
+    if re.search(
         r"旋转|转动|rotation|angular|转动惯量|moment\s*of\s*inertia|angular\s*velocity|角速度",
         _source_text,
     ):
@@ -285,7 +286,7 @@ def build_particle_motion_spec(
         ))
 
     # 警告 2：文本中暗示复杂场变化，但仍按简单背景作用处理
-    if _re.search(r"变化的场|non[\s-]*uniform\s*field|非均匀|varying\s*gravity|变化重力", _source_text):
+    if re.search(r"变化的场|non[\s-]*uniform\s*field|非均匀|varying\s*gravity|变化重力", _source_text):
         validity_warnings.append(ValidityWarning(
             warning_key="complex_field_in_simple_background",
             description="文本暗示非均匀或变化的场，但当前仍按均匀背景作用处理",

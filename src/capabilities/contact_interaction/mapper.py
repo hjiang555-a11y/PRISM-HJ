@@ -33,6 +33,8 @@ C. 原型阶段 fallback 默认值
 
 from __future__ import annotations
 
+import re
+
 from src.capabilities.common.base import ApplicabilityEvalItem, ValidityWarning
 from src.capabilities.contact_interaction.spec import ContactInteractionCapabilitySpec
 from src.problem_semantic.models import ProblemSemanticSpec
@@ -280,11 +282,10 @@ def build_contact_interaction_spec(
     # ------------------------------------------------------------------
 
     validity_warnings: list = []
-    import re as _re
     _source_text = problem_spec.source_input.lower()
 
     # 警告 1：文本中暗示持续接触/摩擦/滑动，但仍按瞬时碰撞处理
-    if _re.search(r"持续接触|滑动|sliding|摩擦|friction|continuous\s*contact", _source_text):
+    if re.search(r"持续接触|滑动|sliding|摩擦|friction|continuous\s*contact", _source_text):
         validity_warnings.append(ValidityWarning(
             warning_key="continuous_contact_in_impulse_model",
             description="文本暗示持续接触或滑动摩擦，但当前仍按瞬时碰撞冲量模型处理",
@@ -293,7 +294,7 @@ def build_contact_interaction_spec(
 
     # 警告 2：文本中暗示多体复杂碰撞，但当前能力仍按简单接触模型处理
     _entity_count_for_warning = len(entity_ids) if entity_ids else 0
-    if _entity_count_for_warning > 2 or _re.search(
+    if _entity_count_for_warning > 2 or re.search(
         r"三体|多体|three[\s-]*body|multi[\s-]*body|三个.*碰|多个.*碰", _source_text
     ):
         validity_warnings.append(ValidityWarning(

@@ -118,11 +118,10 @@ def build_reentry_context(spec: CapabilitySpec) -> Dict[str, Any]:
     supplemental_suggestions = []
     for missing_item in spec.missing_entry_inputs:
         hint = _ENTRY_INPUT_SUGGESTIONS.get(missing_item, {})
-        entity_note = (
-            f"涉及实体：{', '.join(spec.applies_to_entities)}"
-            if spec.applies_to_entities else
-            "实体尚未确定"
-        )
+        if spec.applies_to_entities:
+            entity_note = f"涉及实体：{', '.join(spec.applies_to_entities)}"
+        else:
+            entity_note = "实体尚未确定"
         supplemental_suggestions.append({
             "missing_item": missing_item,
             "label": hint.get("label", missing_item),
