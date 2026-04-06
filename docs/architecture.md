@@ -6,10 +6,19 @@ PRISM-HJ（Physical Reasoning & Inference System for Mechanics — HJ）采用**
 将"自然语言"与"确定性物理执行"完全解耦，使每一层都可独立测试、替换和审计。
 
 > **架构演进说明**：项目正在从 scenario/solver-centered 架构向 state-set and rule-oriented execution core 转型。
-> 现有 `free_fall`、`projectile`、`collision` 模块保留，当前定位为 legacy / reference / testing-oriented modules。
+> 在此基础上，进一步引入**三层表示体系**：
+>
+> - **问题语义层（Problem Semantic Layer）**：解析问题输入，提取实体、关心目标、显式条件及规则相关信息
+> - **能力表示层（Capability Representation Layer）**：针对候选能力族生成各自的 CapabilitySpec，包含 rule_extraction_inputs 和 rule_execution_inputs
+> - **执行计划层（Execution Plan Layer）**：将 CapabilitySpec 整合为统一的 EvolutionScheduleConfig，驱动规则演化
+>
+> 现有 `free_fall`、`projectile`、`collision` 模块保留，当前定位为 legacy / reference / testing-oriented modules，不再代表长期执行核心本体方向。
+>
 > 详见：
 > - [执行核心重构总纲](PRISM_execution_core_rearchitecture.md)
 > - [新执行核心接口草案 v0.1](PRISM_execution_core_interfaces_v0_1.md)
+> - [分层表示架构决议（草案）](PRISM_representation_layers_architecture_decision.md)
+> - [事件提取最小输出契约 v0.1](PRISM_event_extraction_minimum_contract_v0_1.md)
 
 ---
 
