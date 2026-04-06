@@ -37,6 +37,40 @@ _PERSISTENT_CAPABILITY_KINDS = frozenset({CapabilityKind.PARTICLE_MOTION})
 _LOCAL_CAPABILITY_KINDS = frozenset({CapabilityKind.CONTACT_INTERACTION})
 
 
+def _make_assembly_entry(
+    capability_name: str,
+    target_name: str,
+    target_desc: Any,
+) -> Dict[str, Any]:
+    """
+    从 target_desc 构造 assembly_plan 条目，传播 entity / field / component 字段。
+
+    Parameters
+    ----------
+    capability_name:
+        来源能力名称。
+    target_name:
+        目标量名称（仅供调用者引用，不写入返回值）。
+    target_desc:
+        目标量描述（来自 spec.target_mapping 的值）。可以是字符串或字典。
+        若为字典，则尝试传播 ``entity``、``field``、``component`` 字段。
+
+    Returns
+    -------
+    Dict[str, Any]
+        assembly_plan 条目。
+    """
+    entry: Dict[str, Any] = {
+        "source_capability": capability_name,
+        "description": target_desc,
+    }
+    if isinstance(target_desc, dict):
+        for key in ("entity", "field", "component"):
+            if key in target_desc:
+                entry[key] = target_desc[key]
+    return entry
+
+
 def _judge_admission(spec: CapabilitySpec) -> str:
     """
     对单个 CapabilitySpec 做最小 admission 判定。
@@ -110,15 +144,10 @@ def build_execution_plan(
             )
             # unresolved capability 不进入规则计划，但仍汇聚目标量（供追溯）
             for target_name, target_desc in spec.target_mapping.items():
-                entry: Dict[str, Any] = {
-                    "source_capability": spec.capability_name,
-                    "description": target_desc,
-                }
-                if isinstance(target_desc, dict):
-                    for key in ("entity", "field", "component"):
-                        if key in target_desc:
-                            entry[key] = target_desc[key]
-                assembly_plan.setdefault(target_name, entry)
+                assembly_plan.setdefault(
+                    target_name,
+                    _make_assembly_entry(spec.capability_name, target_name, target_desc),
+                )
             unresolved.extend(spec.missing_inputs)
             continue
 
@@ -133,15 +162,10 @@ def build_execution_plan(
             )
             # deferred capability 不进入规则计划，但仍汇聚目标量（供追溯）
             for target_name, target_desc in spec.target_mapping.items():
-                entry2: Dict[str, Any] = {
-                    "source_capability": spec.capability_name,
-                    "description": target_desc,
-                }
-                if isinstance(target_desc, dict):
-                    for key in ("entity", "field", "component"):
-                        if key in target_desc:
-                            entry2[key] = target_desc[key]
-                assembly_plan.setdefault(target_name, entry2)
+                assembly_plan.setdefault(
+                    target_name,
+                    _make_assembly_entry(spec.capability_name, target_name, target_desc),
+                )
             unresolved.extend(spec.missing_inputs)
             continue
 
@@ -182,16 +206,9 @@ def build_execution_plan(
 
         # 汇聚目标量到 assembly_plan，传播 entity / field / component 字段
         for target_name, target_desc in spec.target_mapping.items():
-            entry: Dict[str, Any] = {
-                "source_capability": spec.capability_name,
-                "description": target_desc,
-            }
-            # 若 target_desc 是字典（由 pipeline.py 构造），传播提取路径字段
-            if isinstance(target_desc, dict):
-                for key in ("entity", "field", "component"):
-                    if key in target_desc:
-                        entry[key] = target_desc[key]
-            assembly_plan[target_name] = entry
+            assembly_plan[target_name] = _make_assembly_entry(
+                spec.capability_name, target_name, target_desc
+            )
 
         # 汇聚未决项（执行层）
         unresolved.extend(spec.missing_inputs)

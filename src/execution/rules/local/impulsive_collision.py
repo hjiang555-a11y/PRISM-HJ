@@ -112,7 +112,10 @@ class ImpulsiveCollisionRule(LocalRuleExecutor):
         e: float = float(inputs.get("restitution", 1.0))
         n: List[float] = list(inputs.get("contact_normal", _DEFAULT_NORMAL))
 
-        # 以当前状态副本为起点，依次处理所有两两组合（N-body 串行结算）
+        # 以当前状态副本为起点，依次处理所有两两组合（N-body 串行结算）。
+        # 注意：串行结算中，先处理的碰撞对会影响后续碰撞对（因共享更新后的速度）。
+        # 这种顺序依赖性对两体碰撞（N=2）无影响，对多体碰撞是已知近似，
+        # 与本项目"范式验证"目标一致。如需同步冲量求解器，需重构此方法。
         updated = {k: dict(v) for k, v in pre_trigger_state.items()}
 
         for i in range(len(pair)):

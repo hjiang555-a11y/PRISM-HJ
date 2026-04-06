@@ -32,6 +32,9 @@ def _distance(pos_a: List[float], pos_b: List[float]) -> float:
     return math.sqrt(sum((a - b) ** 2 for a, b in zip(pos_a, pos_b)))
 
 
+_AXIS_INDEX: dict = {"x": 0, "y": 1, "z": 2}
+
+
 class TriggerEngine:
     """
     触发条件检测引擎。
@@ -164,8 +167,6 @@ class TriggerEngine:
         List[Dict[str, Any]]
             已触发事件列表，每个条目含 ``trigger_type``、``entity``、``details``。
         """
-        _AXIS_INDEX = {"x": 0, "y": 1, "z": 2}
-
         axis: str = condition.get("axis", "z")
         axis_idx: int = _AXIS_INDEX.get(axis, 2)
         boundary: float = float(condition.get("threshold", 0.0))
