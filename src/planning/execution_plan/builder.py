@@ -24,7 +24,7 @@ Admission 判定规则
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from src.capabilities.common.base import CapabilitySpec
 from src.planning.execution_plan.models import ExecutionPlan
@@ -58,7 +58,10 @@ def _judge_admission(spec: CapabilitySpec) -> str:
     return "admitted"
 
 
-def build_execution_plan(capability_specs: List[CapabilitySpec]) -> ExecutionPlan:
+def build_execution_plan(
+    capability_specs: List[CapabilitySpec],
+    admission_hints: Optional[Dict[str, Any]] = None,
+) -> ExecutionPlan:
     """
     从 CapabilitySpec 列表构造 ExecutionPlan。
 
@@ -66,6 +69,9 @@ def build_execution_plan(capability_specs: List[CapabilitySpec]) -> ExecutionPla
     ----------
     capability_specs:
         由 build_capability_specs() 产生的能力规格列表。
+    admission_hints:
+        来自语义层的 admission hints（可选）。传递到 ExecutionPlan
+        供 Scheduler 在运行时消费。
 
     Returns
     -------
@@ -188,4 +194,5 @@ def build_execution_plan(capability_specs: List[CapabilitySpec]) -> ExecutionPla
         admitted_capabilities=admitted_capabilities,
         deferred_capabilities=deferred_capabilities,
         unresolved_admission_items=unresolved_admission_items,
+        admission_hints=dict(admission_hints) if admission_hints else {},
     )

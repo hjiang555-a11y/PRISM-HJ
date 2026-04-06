@@ -94,13 +94,44 @@ class Scheduler:
         -------
         ExecutionResult
             包含目标量结果和触发记录的执行结果。
+
+        Admission Hints 消费逻辑（P1 新增）
+        ------------------------------------
+        Scheduler 根据 execution_plan.admission_hints 调整规则激活：
+
+        1. interaction_hints:
+           - 无 ``"gravity_present"`` → 跳过 constant_gravity 规则
+           - 无 ``"collision_possible"`` → 跳过 impulsive_collision 规则
+        2. assumption_hints:
+           - ``"inelastic_collision"`` → 设置 restitution=0.0
+           - ``"elastic_collision"``  → 设置 restitution=1.0
         """
         grav = gravity_vector if gravity_vector is not None else [0.0, 0.0, -9.8]
+
+        # --- P1: 解析 admission hints ---
+        hints = execution_plan.admission_hints
+        interaction_hints: List[str] = hints.get("interaction_hints", [])
+        assumption_hints: List[str] = hints.get("assumption_hints", [])
+
+        # 判断规则是否应被激活（hints 为空时默认全部激活以保持后向兼容）
+        _has_interaction_hints = bool(interaction_hints)
+        _gravity_enabled = (
+            not _has_interaction_hints or "gravity_present" in interaction_hints
+        )
+        _collision_enabled = (
+            not _has_interaction_hints or "collision_possible" in interaction_hints
+        )
 
         # 实例化持续规则执行器
         persistent_executors: List[tuple] = []  # (executor, applies_to, rule_inputs)
         for rule_entry in execution_plan.persistent_rule_plan:
             rule_name = rule_entry.get("rule_name", "")
+
+            # P1: 根据 hints 过滤不需要的规则
+            if rule_name == "constant_gravity" and not _gravity_enabled:
+                logger.info("hints 过滤：跳过 constant_gravity（无 gravity_present hint）")
+                continue
+
             executor_cls = _PERSISTENT_RULE_REGISTRY.get(rule_name)
             if executor_cls is None:
                 logger.warning("未知持续规则 '%s'，已跳过", rule_name)
@@ -116,11 +147,27 @@ class Scheduler:
         local_executors: List[tuple] = []  # (executor, applies_to, rule_inputs)
         for rule_entry in execution_plan.local_rule_plan:
             rule_name = rule_entry.get("rule_name", "")
+
+            # P1: 根据 hints 过滤不需要的规则
+            if rule_name == "impulsive_collision" and not _collision_enabled:
+                logger.info("hints 过滤：跳过 impulsive_collision（无 collision_possible hint）")
+                continue
+
             executor_cls = _LOCAL_RULE_REGISTRY.get(rule_name)
             if executor_cls is None:
                 logger.warning("未知局部规则 '%s'，已跳过", rule_name)
                 continue
             rule_inputs = dict(rule_entry.get("rule_execution_inputs", {}))
+
+            # P1: 根据 assumption hints 调整碰撞恢复系数
+            if rule_name == "impulsive_collision":
+                if "inelastic_collision" in assumption_hints:
+                    rule_inputs["restitution"] = 0.0
+                    logger.info("hints 参数填充：restitution=0.0（inelastic_collision hint）")
+                elif "elastic_collision" in assumption_hints:
+                    rule_inputs["restitution"] = 1.0
+                    logger.info("hints 参数填充：restitution=1.0（elastic_collision hint）")
+
             local_executors.append(
                 (executor_cls(), rule_entry.get("applies_to", []), rule_inputs)
             )
