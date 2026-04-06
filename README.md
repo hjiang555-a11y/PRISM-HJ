@@ -25,21 +25,21 @@
 - **Triggered local interactions**：局部作用（如碰撞、接触力）在条件满足时短时激活
 - **Result assembly**：从状态集演化结果中提取面向目标的物理量输出
 
-未来将支持 **cross-domain rule composition**，例如经典力学与电磁学规则共同作用于同一状态集。`domain` 是规则的命名空间，不是执行时的互斥条件。
-
 ### 三层表示体系
 
-在 state-set / rule-oriented execution core 的基础上，项目进一步采用三层表示体系：
+在 state-set / rule-oriented execution core 的基础上，项目进一步采用三层表示体系（以下均为架构级规划对象，尚非稳定代码实现）：
 
-- **Problem Semantic Layer（问题语义层）**：解析输入，提取实体、关心目标（`targets_of_interest`）、显式条件，以及为后续规则提取和规则执行准备的信息（`rule_extraction_inputs` 和 `rule_execution_inputs`）。输出为 `ProblemSemanticSpec`。
-- **Capability Representation Layer（能力表示层）**：针对候选能力族生成各自的 `CapabilitySpec`。各 CapabilitySpec 共享最小公共骨架，但允许按能力族差异扩展。`rule_extraction_inputs` 和 `rule_execution_inputs` 在此层也必须显式出现。
-- **Execution Plan Layer（执行计划层）**：将各 CapabilitySpec 整合为统一的 `EvolutionScheduleConfig`，驱动规则驱动演化与 Result Assembly。
+- **Problem Semantic Layer（问题语义层）**：解析输入，提取实体、关心目标（`targets_of_interest`）、显式条件，以及 `rule_extraction_inputs` 和 `rule_execution_inputs`。对应规划对象 `ProblemSemanticSpec`。
+- **Capability Representation Layer（能力表示层）**：针对候选能力族生成各自的能力表示（`CapabilitySpec`），显式携带 `rule_extraction_inputs` 和 `rule_execution_inputs`。
+- **Execution Plan Layer（执行计划层）**：将各能力表示整合为统一的 `ExecutionPlan`，驱动规则驱动演化与 Result Assembly。
 
-事件提取（Event Extraction）的输出不只是文本结构化，还要显式服务于两类关键信息准备：
-- **rule extraction inputs**：规则提取阶段判断应激活哪些 primitive rules 的依据
-- **rule execution inputs**：规则执行阶段 primitive rules 计算所需的数值输入
+**当前阶段重点**：事件提取（Event Extraction）的输出不只是文本结构化，还要显式服务于两类关键信息准备：
+- **`rule_extraction_inputs`**：规则提取阶段判断应激活哪些 primitive rules 的依据
+- **`rule_execution_inputs`**：规则执行阶段 primitive rules 计算所需的数值输入
 
-现有的 `free_fall`、`projectile`、`collision` 模块**仍然保留**，当前定位为 **legacy / reference / testing-oriented modules**，不再代表执行核心的长期方向。
+跨领域扩展（cross-domain rule composition）作为未来可扩展方向保留，不是当前优先矛盾。
+
+现有的 `free_fall`、`projectile`、`collision` 模块**仍然保留**，当前定位为 **legacy / reference / testing-oriented modules**，不代表执行核心的长期方向。
 
 详细说明见：
 - [`docs/PRISM_execution_core_rearchitecture.md`](docs/PRISM_execution_core_rearchitecture.md)（执行核心重构总纲）
