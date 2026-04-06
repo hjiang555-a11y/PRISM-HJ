@@ -18,7 +18,34 @@ StateSet — 运行时状态集合 v0.1.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
+
+try:
+    from typing import TypedDict
+except ImportError:  # Python < 3.8
+    from typing_extensions import TypedDict
+
+
+class EntityState(TypedDict, total=False):
+    """
+    实体运行时状态的类型约束。
+
+    所有字段均为可选（``total=False``），允许部分填充。
+    常见字段列举如下；扩展字段可自由添加（TypedDict 开放结构）。
+
+    Attributes
+    ----------
+    position:
+        空间位置向量 [x, y, z]，单位 m。
+    velocity:
+        速度向量 [vx, vy, vz]，单位 m/s。
+    mass:
+        质量，单位 kg。
+    """
+
+    position: List[float]
+    velocity: List[float]
+    mass: float
 
 
 class StateSet:
@@ -39,7 +66,7 @@ class StateSet:
     """
 
     def __init__(self) -> None:
-        self._states: Dict[str, Dict[str, Any]] = {}
+        self._states: Dict[str, EntityState] = {}
         # 用于存储全局查询目标（如触发事件时刻、碰撞记录等）
         self._target_registry: Dict[str, Any] = {}
 
@@ -47,7 +74,7 @@ class StateSet:
     # 实体状态读写
     # ------------------------------------------------------------------
 
-    def set_entity_state(self, entity_id: str, state: Dict[str, Any]) -> None:
+    def set_entity_state(self, entity_id: str, state: EntityState) -> None:
         """
         设置（覆盖）指定实体的完整状态。
 
@@ -60,7 +87,7 @@ class StateSet:
         """
         self._states[entity_id] = dict(state)
 
-    def get_entity_state(self, entity_id: str) -> Optional[Dict[str, Any]]:
+    def get_entity_state(self, entity_id: str) -> Optional[EntityState]:
         """
         获取指定实体的当前状态。
 

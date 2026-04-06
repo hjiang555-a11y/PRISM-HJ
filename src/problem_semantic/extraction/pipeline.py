@@ -1,5 +1,5 @@
 """
-问题语义提取流水线 v0.2.
+问题语义提取流水线 v0.3.
 
 extract_problem_semantics(input_text) -> ProblemSemanticSpec
 
@@ -16,13 +16,19 @@ entity_model_hints / interaction_hints / assumption_hints / query_hints，
 v0.2 更新：对已知场景类型（free_fall / projectile / collision），利用
 regex extractors + classify_scenario 填充 entities、explicit_conditions、
 targets_of_interest 和 rule_execution_inputs，实现 fully populated spec。
+
+v0.3 重构：
+- 将每个场景处理器提取为独立函数
+- 使用可扩展注册表（_SCENARIO_HANDLER_REGISTRY）替代硬编码 if/elif
+- targets_of_interest 新增 entity、field、component 字段供 ResultAssembler 直接提取
+- 提供 register_scenario_handler() 供外部扩展，无需修改本文件
 """
 
 from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from src.problem_semantic.models import ProblemSemanticSpec
 
@@ -190,156 +196,26 @@ def _enrich_from_extractors(spec: ProblemSemanticSpec) -> ProblemSemanticSpec:
     populates ``entities``, ``explicit_conditions``, ``targets_of_interest``,
     ``rule_execution_inputs``, and ``candidate_capabilities``.  Otherwise
     the spec is returned unchanged (skeleton mode).
+
+    Dispatches to the registered handler via ``_SCENARIO_HANDLER_REGISTRY``.
+    New scenarios can be added via :func:`register_scenario_handler` without
+    modifying this file.
     """
     from src.llm.translator import classify_scenario
-    from src.problem_semantic.extraction.extractors import (
-        extract_collision_params,
-        extract_free_fall_params,
-        extract_projectile_params,
-    )
 
     scenario: Optional[str] = classify_scenario(spec.source_input)
     if scenario is None:
         return spec
 
-    # ----- free_fall -----
-    if scenario == "free_fall":
-        params = extract_free_fall_params(spec.source_input)
-        if params is None:
-            return spec
-
-        h = params["height"]
-        dur = params["duration"]
-        mass = params["mass"]
-        v0z = params["v0z"]
-
-        spec.entities = [
-            {
-                "name": "ball",
-                "mass": mass,
-                "initial_position": [0, 0, h],
-                "initial_velocity": [0, 0, v0z],
-            },
-        ]
-
-        # Use standardised condition names that capability mappers recognise
-        # (mappers check for keywords: "height"/"position", "velocity"/"v0",
-        #  "mass"/"m" in the condition name set)
-        spec.explicit_conditions = [
-            {"name": "height", "value": h, "entity": "ball"},
-            {"name": "mass", "value": mass, "entity": "ball"},
-            {"name": "initial_velocity", "value": [0, 0, v0z], "entity": "ball"},
-        ]
-
-        spec.targets_of_interest = [
-            {"name": "final_z", "description": "落体最终高度"},
-            {"name": "final_vz", "description": "落体最终速度(z)"},
-        ]
-
-        spec.rule_execution_inputs = {
-            "scenario_type": "free_fall",
-            "gravity_vector": list(_DEFAULT_GRAVITY),
-            "dt": _DEFAULT_DT,
-            "steps": round(dur / _DEFAULT_DT),
-        }
-
-        spec.candidate_capabilities = ["particle_motion"]
-
-    # ----- projectile -----
-    elif scenario == "projectile":
-        params = extract_projectile_params(spec.source_input)
-        if params is None:
-            return spec
-
-        h = params["height"]
-        v0x = params["v0x"]
-        dur = params["duration"]
-        mass = params["mass"]
-
-        spec.entities = [
-            {
-                "name": "projectile",
-                "mass": mass,
-                "initial_position": [0, 0, h],
-                "initial_velocity": [v0x, 0, 0],
-            },
-        ]
-
-        spec.explicit_conditions = [
-            {"name": "height", "value": h, "entity": "projectile"},
-            {"name": "velocity", "value": [v0x, 0, 0], "entity": "projectile"},
-            {"name": "mass", "value": mass, "entity": "projectile"},
-        ]
-
-        spec.targets_of_interest = [
-            {"name": "final_x", "description": "抛体最终水平位置"},
-            {"name": "final_z", "description": "抛体最终高度"},
-            {"name": "final_vz", "description": "抛体最终竖直速度"},
-        ]
-
-        spec.rule_execution_inputs = {
-            "scenario_type": "projectile",
-            "gravity_vector": list(_DEFAULT_GRAVITY),
-            "dt": _DEFAULT_DT,
-            "steps": round(dur / _DEFAULT_DT),
-        }
-
-        spec.candidate_capabilities = ["particle_motion"]
-
-    # ----- collision -----
-    elif scenario == "collision":
-        params = extract_collision_params(spec.source_input)
-        if params is None:
-            return spec
-
-        m1 = params["m1"]
-        m2 = params["m2"]
-        v1x = params["v1x"]
-        v2x = params["v2x"]
-        ctype = params["collision_type"]
-
-        spec.entities = [
-            {
-                "name": "ball_a",
-                "mass": m1,
-                "initial_position": [0, 0, 0],
-                "initial_velocity": [v1x, 0, 0],
-            },
-            {
-                "name": "ball_b",
-                "mass": m2,
-                "initial_position": [1, 0, 0],
-                "initial_velocity": [v2x, 0, 0],
-            },
-        ]
-
-        spec.explicit_conditions = [
-            {"name": "mass", "value": m1, "entity": "ball_a"},
-            {"name": "velocity", "value": v1x, "entity": "ball_a"},
-            {"name": "mass", "value": m2, "entity": "ball_b"},
-            {"name": "velocity", "value": v2x, "entity": "ball_b"},
-        ]
-
-        spec.targets_of_interest = [
-            {"name": "final_v1x", "description": "碰后物体A速度(x)"},
-            {"name": "final_v2x", "description": "碰后物体B速度(x)"},
-        ]
-
-        spec.rule_execution_inputs = {
-            "scenario_type": "collision",
-            "restitution": 1.0 if ctype == "elastic" else 0.0,
-            "contact_normal": [1, 0, 0],
-            "dt": _DEFAULT_DT,
-            "steps": 100,
-        }
-
-        spec.candidate_capabilities = ["particle_motion", "contact_interaction"]
-
-    else:
+    handler = _SCENARIO_HANDLER_REGISTRY.get(scenario)
+    if handler is None:
+        logger.debug("classify_scenario 返回未知场景 '%s'，跳过丰富化", scenario)
         return spec
 
+    enriched = handler(spec)
+
     # Store scenario_type in rule_extraction_inputs
-    spec.rule_extraction_inputs["scenario_type"] = scenario
+    enriched.rule_extraction_inputs["scenario_type"] = scenario
 
     # Remove resolved unresolved_items
     _resolved = {
@@ -348,11 +224,244 @@ def _enrich_from_extractors(spec: ProblemSemanticSpec) -> ProblemSemanticSpec:
         "explicit_conditions_pending",
         "rule_execution_inputs_pending",
     }
-    spec.unresolved_items = [
-        item for item in spec.unresolved_items if item not in _resolved
+    enriched.unresolved_items = [
+        item for item in enriched.unresolved_items if item not in _resolved
     ]
 
+    return enriched
+
+
+# ---------------------------------------------------------------------------
+# Scenario handlers — one function per scenario type
+# Each handler receives *spec* and returns an enriched copy.
+# ---------------------------------------------------------------------------
+
+def _handle_free_fall(spec: ProblemSemanticSpec) -> ProblemSemanticSpec:
+    """自由落体场景处理器。"""
+    from src.problem_semantic.extraction.extractors import extract_free_fall_params
+
+    params = extract_free_fall_params(spec.source_input)
+    if params is None:
+        return spec
+
+    h = params["height"]
+    dur = params["duration"]
+    mass = params["mass"]
+    v0z = params["v0z"]
+
+    spec.entities = [
+        {
+            "name": "ball",
+            "mass": mass,
+            "initial_position": [0, 0, h],
+            "initial_velocity": [0, 0, v0z],
+        },
+    ]
+
+    spec.explicit_conditions = [
+        {"name": "height", "value": h, "entity": "ball"},
+        {"name": "mass", "value": mass, "entity": "ball"},
+        {"name": "initial_velocity", "value": [0, 0, v0z], "entity": "ball"},
+    ]
+
+    spec.targets_of_interest = [
+        {
+            "name": "final_z",
+            "description": "落体最终高度",
+            "entity": "ball",
+            "field": "position",
+            "component": 2,
+        },
+        {
+            "name": "final_vz",
+            "description": "落体最终速度(z)",
+            "entity": "ball",
+            "field": "velocity",
+            "component": 2,
+        },
+    ]
+
+    spec.rule_execution_inputs = {
+        "scenario_type": "free_fall",
+        "gravity_vector": list(_DEFAULT_GRAVITY),
+        "dt": _DEFAULT_DT,
+        "steps": round(dur / _DEFAULT_DT),
+    }
+
+    spec.candidate_capabilities = ["particle_motion"]
     return spec
+
+
+def _handle_projectile(spec: ProblemSemanticSpec) -> ProblemSemanticSpec:
+    """平抛/斜抛场景处理器。"""
+    from src.problem_semantic.extraction.extractors import extract_projectile_params
+
+    params = extract_projectile_params(spec.source_input)
+    if params is None:
+        return spec
+
+    h = params["height"]
+    v0x = params["v0x"]
+    dur = params["duration"]
+    mass = params["mass"]
+
+    spec.entities = [
+        {
+            "name": "projectile",
+            "mass": mass,
+            "initial_position": [0, 0, h],
+            "initial_velocity": [v0x, 0, 0],
+        },
+    ]
+
+    spec.explicit_conditions = [
+        {"name": "height", "value": h, "entity": "projectile"},
+        {"name": "velocity", "value": [v0x, 0, 0], "entity": "projectile"},
+        {"name": "mass", "value": mass, "entity": "projectile"},
+    ]
+
+    spec.targets_of_interest = [
+        {
+            "name": "final_x",
+            "description": "抛体最终水平位置",
+            "entity": "projectile",
+            "field": "position",
+            "component": 0,
+        },
+        {
+            "name": "final_z",
+            "description": "抛体最终高度",
+            "entity": "projectile",
+            "field": "position",
+            "component": 2,
+        },
+        {
+            "name": "final_vz",
+            "description": "抛体最终竖直速度",
+            "entity": "projectile",
+            "field": "velocity",
+            "component": 2,
+        },
+    ]
+
+    spec.rule_execution_inputs = {
+        "scenario_type": "projectile",
+        "gravity_vector": list(_DEFAULT_GRAVITY),
+        "dt": _DEFAULT_DT,
+        "steps": round(dur / _DEFAULT_DT),
+    }
+
+    spec.candidate_capabilities = ["particle_motion"]
+    return spec
+
+
+def _handle_collision(spec: ProblemSemanticSpec) -> ProblemSemanticSpec:
+    """碰撞场景处理器。"""
+    from src.problem_semantic.extraction.extractors import extract_collision_params
+
+    params = extract_collision_params(spec.source_input)
+    if params is None:
+        return spec
+
+    m1 = params["m1"]
+    m2 = params["m2"]
+    v1x = params["v1x"]
+    v2x = params["v2x"]
+    ctype = params["collision_type"]
+
+    spec.entities = [
+        {
+            "name": "ball_a",
+            "mass": m1,
+            "initial_position": [0, 0, 0],
+            "initial_velocity": [v1x, 0, 0],
+        },
+        {
+            "name": "ball_b",
+            "mass": m2,
+            "initial_position": [1, 0, 0],
+            "initial_velocity": [v2x, 0, 0],
+        },
+    ]
+
+    spec.explicit_conditions = [
+        {"name": "mass", "value": m1, "entity": "ball_a"},
+        {"name": "velocity", "value": v1x, "entity": "ball_a"},
+        {"name": "mass", "value": m2, "entity": "ball_b"},
+        {"name": "velocity", "value": v2x, "entity": "ball_b"},
+    ]
+
+    spec.targets_of_interest = [
+        {
+            "name": "final_v1x",
+            "description": "碰后物体A速度(x)",
+            "entity": "ball_a",
+            "field": "velocity",
+            "component": 0,
+        },
+        {
+            "name": "final_v2x",
+            "description": "碰后物体B速度(x)",
+            "entity": "ball_b",
+            "field": "velocity",
+            "component": 0,
+        },
+    ]
+
+    spec.rule_execution_inputs = {
+        "scenario_type": "collision",
+        "restitution": 1.0 if ctype == "elastic" else 0.0,
+        "contact_normal": [1, 0, 0],
+        "dt": _DEFAULT_DT,
+        "steps": 100,
+    }
+
+    spec.candidate_capabilities = ["particle_motion", "contact_interaction"]
+    return spec
+
+
+# ---------------------------------------------------------------------------
+# Scenario handler registry
+# ---------------------------------------------------------------------------
+
+# 场景名称 -> 处理函数的注册表。支持外部通过 register_scenario_handler() 扩展。
+_SCENARIO_HANDLER_REGISTRY: Dict[str, Callable[[ProblemSemanticSpec], ProblemSemanticSpec]] = {
+    "free_fall": _handle_free_fall,
+    "projectile": _handle_projectile,
+    "collision": _handle_collision,
+}
+
+
+def register_scenario_handler(
+    scenario_name: str,
+    handler: Callable[[ProblemSemanticSpec], ProblemSemanticSpec],
+) -> None:
+    """
+    注册一个自定义场景处理器，无需修改本文件。
+
+    Parameters
+    ----------
+    scenario_name:
+        场景名称，与 ``classify_scenario()`` 返回值对应。
+    handler:
+        处理函数，接受 ``ProblemSemanticSpec`` 并返回丰富化后的
+        ``ProblemSemanticSpec``。
+
+    Example
+    -------
+    ::
+
+        from src.problem_semantic.extraction.pipeline import register_scenario_handler
+        from src.problem_semantic.models import ProblemSemanticSpec
+
+        def my_handler(spec: ProblemSemanticSpec) -> ProblemSemanticSpec:
+            # 填充 entities、targets_of_interest 等字段
+            ...
+            return spec
+
+        register_scenario_handler("my_scenario", my_handler)
+    """
+    _SCENARIO_HANDLER_REGISTRY[scenario_name] = handler
 
 
 # ---------------------------------------------------------------------------

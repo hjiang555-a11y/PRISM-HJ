@@ -32,6 +32,9 @@ def _distance(pos_a: List[float], pos_b: List[float]) -> float:
     return math.sqrt(sum((a - b) ** 2 for a, b in zip(pos_a, pos_b)))
 
 
+_AXIS_INDEX: dict = {"x": 0, "y": 1, "z": 2}
+
+
 class TriggerEngine:
     """
     触发条件检测引擎。
@@ -77,9 +80,10 @@ class TriggerEngine:
         List[Dict[str, Any]]
             已触发事件列表。每个条目含：
 
-            - ``trigger_type``: 触发类型（如 ``"contact"``）
-            - ``entity_pair``: 触发的实体对 ``[id_a, id_b]``
-            - ``details``: 附加信息字典（如距离）
+            - ``trigger_type``: 触发类型（如 ``"contact"``、``"boundary_contact"``）
+            - ``entity_pair``: 触发的实体对 ``[id_a, id_b]``（仅 contact 类型）
+            - ``entity``: 触发的实体 ID（仅 boundary_contact 类型）
+            - ``details``: 附加信息字典（如距离、z 坐标）
         """
         triggered: List[Dict[str, Any]] = []
 
@@ -88,6 +92,9 @@ class TriggerEngine:
 
             if trigger_type == "contact":
                 events = self._check_contact(state_set, condition)
+                triggered.extend(events)
+            elif trigger_type == "boundary_contact":
+                events = self._check_boundary_contact(state_set, condition)
                 triggered.extend(events)
             # 未来可在此扩展其他 trigger 类型
 
@@ -124,6 +131,69 @@ class TriggerEngine:
                     "trigger_type": "contact",
                     "entity_pair": [id_a, id_b],
                     "details": {"distance": dist},
+                })
+
+        return events
+
+    def _check_boundary_contact(
+        self,
+        state_set: StateSet,
+        condition: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        """
+        检查实体与空间边界的接触触发条件。
+
+        支持地面（z=0）及任意轴向平面边界。
+
+        触发计划条目格式::
+
+            {
+                "type": "boundary_contact",
+                "entities": ["ball"],         # 要检测的实体列表
+                "axis": "z",                  # 边界法线轴（"x"/"y"/"z"）
+                "threshold": 0.0,             # 边界坐标值（默认 0.0 = 地面）
+                "direction": "below",         # "below"（z<=threshold）或 "above"（z>=threshold）
+            }
+
+        Parameters
+        ----------
+        state_set:
+            当前运行时状态集合。
+        condition:
+            触发计划条目，见上方格式说明。
+
+        Returns
+        -------
+        List[Dict[str, Any]]
+            已触发事件列表，每个条目含 ``trigger_type``、``entity``、``details``。
+        """
+        axis: str = condition.get("axis", "z")
+        axis_idx: int = _AXIS_INDEX.get(axis, 2)
+        boundary: float = float(condition.get("threshold", 0.0))
+        direction: str = condition.get("direction", "below")
+        entities: List[str] = condition.get("entities", [])
+
+        # 若未指定实体，检测所有已注册实体
+        if not entities:
+            entities = state_set.all_entity_ids()
+
+        events: List[Dict[str, Any]] = []
+        for entity_id in entities:
+            state = state_set.get_entity_state(entity_id)
+            if state is None:
+                continue
+            pos: Optional[List[float]] = state.get("position")
+            if pos is None or len(pos) <= axis_idx:
+                continue
+            coord = pos[axis_idx]
+            triggered = (
+                coord <= boundary if direction == "below" else coord >= boundary
+            )
+            if triggered:
+                events.append({
+                    "trigger_type": "boundary_contact",
+                    "entity": entity_id,
+                    "details": {axis: coord, "boundary": boundary, "direction": direction},
                 })
 
         return events

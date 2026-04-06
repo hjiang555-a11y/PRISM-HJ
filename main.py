@@ -184,6 +184,14 @@ def _print_new_pipeline_result(question: str, result: dict) -> None:
 
     print(f"\n[Final States: {json.dumps(final_states, ensure_ascii=False)}]")
 
+    # Generate natural language answer (completing pipeline parity with legacy route)
+    try:
+        logger.info("Generating natural language answer (new pipeline)...")
+        answer = generate_answer(question, final_states)
+        print(f"\nAnswer:\n{answer}\n")
+    except Exception as exc:
+        logger.warning("自然语言答案生成失败（不影响物理结果）: %s", exc)
+
 
 def _run_legacy_pipeline(question: str) -> None:
     """Run the legacy (old) pipeline."""
