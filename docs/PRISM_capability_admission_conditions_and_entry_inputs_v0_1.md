@@ -60,9 +60,12 @@
 （量纲意义上的位置、速度、质量）必须在 `ProblemSemanticSpec` 中有对应的
 显式条件或可推断的来源。
 
-在代码层，`required_entry_inputs` 对应：
-- `ParticleMotionCapabilitySpec.initial_state_requirements`
-- `ContactInteractionCapabilitySpec.pre_trigger_state_requirements`
+在代码层，`required_entry_inputs` 已作为 `CapabilitySpec` 的正式字段（`List[str]`）
+存在，声明该 capability 的必要物理量类别列表，如：
+```
+["initial_position_per_entity", "initial_velocity_per_entity", "mass_per_entity"]
+```
+各具体 capability 的 mapper 在构造时填充此字段。
 
 ### 3.2 `applicability_conditions`
 
@@ -99,7 +102,15 @@
 `missing_entry_inputs` 是动态状态：在从 `ProblemSemanticSpec` 构建 capability
 的过程中，如果某个必须的入口要素无法从语义层找到，则记入此列表。
 
-在代码层，此概念对应 `CapabilitySpec.missing_inputs`（当前命名，语义等价）。
+在代码层，`missing_entry_inputs` 已作为 `CapabilitySpec` 的正式字段（`List[str]`）
+存在，由各 capability 的 mapper 在构造时动态计算填充。
+
+**字段边界说明**：
+
+- `missing_entry_inputs`（准入层概念）：描述 capability 能否进入执行计划前
+  缺少的物理量类别。非空时，capability 进入 `deferred` 状态。
+- `missing_inputs`（执行层概念）：描述规则执行时尚未补齐的运行时参数，
+  来自 `ProblemSemanticSpec.unresolved_items`，不直接决定 admission 状态。
 
 ### 3.5 `validity_limits`
 
@@ -142,15 +153,19 @@
 准入相关字段分布如下：
 
 **公共骨架（`CapabilitySpec` 基类）**：
-- `applicability_conditions`：能力适用条件（新增）
-- `assumptions`：物理假设（新增）
-- `validity_limits`：有效边界（新增）
-- `missing_inputs`：当前缺失的入口要素（已有，对应 `missing_entry_inputs`）
+- `applicability_conditions`：能力适用条件（已实现）
+- `assumptions`：物理假设（已实现）
+- `validity_limits`：有效边界（已实现）
+- `required_entry_inputs`：必要入口要素类别声明（已实现，`List[str]`）
+- `missing_entry_inputs`：当前缺失的入口要素（已实现，`List[str]`，由 mapper 动态计算）
+- `missing_inputs`：执行层运行时缺失参数（已有，概念上有别于 `missing_entry_inputs`）
 - `candidate_rules`：候选规则（已有，反映能力在准入后的规则选项）
 
 **具体 capability 层（子类）**：
-- `initial_state_requirements`（`ParticleMotionCapabilitySpec`）：对应该 capability 的 `required_entry_inputs`
-- `pre_trigger_state_requirements`（`ContactInteractionCapabilitySpec`）：对应该 capability 的 `required_entry_inputs`
+- `initial_state_requirements`（`ParticleMotionCapabilitySpec`）：各实体初始状态要求，
+  与 `required_entry_inputs` 概念对应，以字典形式存储已提取的具体值
+- `pre_trigger_state_requirements`（`ContactInteractionCapabilitySpec`）：触发前状态要求，
+  同上
 
 ### 4.3 ExecutionPlan（执行计划层）
 
@@ -158,13 +173,14 @@
 
 | 状态 | 说明 | 当前实现状态 |
 |------|------|------------|
-| `admitted` | 所有 `required_entry_inputs` 已满足，`applicability_conditions` 成立，可进入执行 | 部分实现（candidate_rules 已填入执行计划） |
-| `deferred` | `applicability_conditions` 成立，但 `required_entry_inputs` 有缺失，暂不执行 | 概念定义（未显式区分） |
-| `unresolved` | `missing_entry_inputs` 非空，或 `applicability_conditions` 无法判断 | 部分实现（`unresolved_execution_inputs` 汇聚了 `missing_inputs`） |
+| `admitted` | `applies_to_entities` 非空且 `missing_entry_inputs` 为空，可进入执行 | **已实现**（`admitted_capabilities` 字段，规则进入 persistent/local plan） |
+| `deferred` | `applies_to_entities` 非空但 `missing_entry_inputs` 非空，暂不执行 | **已实现**（`deferred_capabilities` 字段，含 `missing_entry_inputs` 详情） |
+| `unresolved` | `applies_to_entities` 为空，作用对象不明 | **已实现**（`unresolved_admission_items` 字段，含 `reason` 说明） |
 
-当前 `build_execution_plan` 已通过 `unresolved_execution_inputs` 汇聚
-`missing_inputs` 来标识未解析项目，但尚未显式区分 `admitted` 与 `deferred` 状态。
-这是本轮约定之后的后续任务项（见第八节）。
+`build_execution_plan()` 中的 `_judge_admission()` 函数实现了上述三态判定逻辑：
+- 仅 `admitted` 状态的 capability 的规则进入 `persistent_rule_plan` / `local_rule_plan`
+- `deferred` 和 `unresolved` 的 capability 不进入规则计划，但其目标量仍汇入 `assembly_plan` 供追溯
+- 所有 capability 均记录在 `capability_bindings` 中，不论 admission 状态
 
 ---
 
@@ -264,8 +280,8 @@
   `ProblemSemanticSpec` 通过 `explicit_conditions` 承担，capability 只声明
   入口要素的类别。
 
-- **不在本轮实现完整的 admitted/deferred/unresolved 三态判断**：这是后续
-  `ExecutionPlan` 演进中的任务项，本轮只在概念层面约定（见第四节 4.3）。
+- **不在本轮实现 `validity_limits` 运行时校验**：当前 `validity_limits` 仍为
+  声明性字段；轻量边界检查机制（如速度范围警告）留待后续轮次实现。
 
 ---
 
@@ -295,17 +311,23 @@
 
 以下内容是本轮 v0.1 约定后尚未完成、需在后续轮次处理的任务：
 
-1. **`ExecutionPlan` 三态判断实现**：在 `build_execution_plan` 中引入显式的
-   `admitted_capabilities`、`deferred_capabilities`、`unresolved_admission_items`
-   分类，基于 `applicability_conditions` 和 `missing_entry_inputs` 驱动。
+1. **`ProblemSemanticSpec` 语义线索增强**：当前 `missing_entry_inputs` 的计算
+   依赖 mapper 对 `explicit_conditions` 名称的关键词匹配（如 `"position"`、
+   `"velocity"`、`"mass"` 等），这是粗粒度实现。未来应从 `ProblemSemanticSpec`
+   中更丰富的语义标注（实体类型、物理量类型）精确推断，减少关键词 fallback 的误判。
 
-2. **`ProblemSemanticSpec` 语义线索增强**：当前 `applicability_conditions`
-   的填写依赖 mapper 的硬编码默认值；未来应从 `ProblemSemanticSpec` 中更丰富的
-   语义线索（实体类型标注、交互类型标注）动态推断。
+2. **`applicability_conditions` 动态推断**：当前 mapper 中的 `applicability_conditions`
+   和 `assumptions` 是硬编码的默认物理假设，来源于 capability 定义本身，而非从
+   `ProblemSemanticSpec` 中语义提取。后续可通过 `rule_extraction_inputs` 中的
+   语义线索动态覆盖（如"问题明确说明有空气阻力"）。
 
 3. **后续 capability 准入对齐**：每当新增 capability 族时，必须按本约定格式
-   填写 `applicability_conditions`、`assumptions`、`validity_limits`，
-   不允许省略。
+   填写 `required_entry_inputs`、`missing_entry_inputs`、`applicability_conditions`、
+   `assumptions`、`validity_limits`，不允许省略准入层字段。
 
-4. **`validity_limits` 检查机制**：当前 `validity_limits` 仅为文档/声明性字段；
-   后续可引入轻量校验（如速度范围检查），使 capability 能在准入时主动警告越界。
+4. **`validity_limits` 轻量校验机制**：当前 `validity_limits` 仅为声明性字段；
+   后续可引入轻量警告（如速度范围检查），使 capability 能在准入时主动标记越界情况。
+
+5. **deferred capability 的重入机制**：当前 `deferred_capabilities` 记录了缺失的
+   入口要素，但尚无"补充后重新进入执行计划"的机制。后续可考虑在交互循环中
+   让用户或 LLM 补充缺失要素后触发重新 admission 判定。

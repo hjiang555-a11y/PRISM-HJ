@@ -7,11 +7,19 @@ build_execution_plan(capability_specs) -> ExecutionPlan
 - persistent/local rules 的基本分离
 - trigger 条件组织
 - assembly plan 组织
+- capability admission 状态判定（admitted / deferred / unresolved）
 
 当前最小实现：
 - ParticleMotionCapabilitySpec -> persistent_rule_plan
 - ContactInteractionCapabilitySpec -> local_rule_plan + trigger_plan
 - 目标量从所有 spec 的 target_mapping 中汇聚到 assembly_plan
+- 仅 admitted capabilities 的规则进入执行计划
+
+Admission 判定规则
+-----------------
+- unresolved:  applies_to_entities 为空（无法确定作用对象）
+- deferred:    applies_to_entities 非空，但 missing_entry_inputs 非空（缺少必要入口要素）
+- admitted:    applies_to_entities 非空 且 missing_entry_inputs 为空
 """
 
 from __future__ import annotations
@@ -28,6 +36,28 @@ _PERSISTENT_CAPABILITY_NAMES = {"particle_motion"}
 _LOCAL_CAPABILITY_NAMES = {"contact_interaction"}
 
 
+def _judge_admission(spec: CapabilitySpec) -> str:
+    """
+    对单个 CapabilitySpec 做最小 admission 判定。
+
+    Returns
+    -------
+    str
+        ``"admitted"`` | ``"deferred"`` | ``"unresolved"``
+
+    判定规则
+    --------
+    - unresolved:  ``applies_to_entities`` 为空，无法确定作用对象
+    - deferred:    ``applies_to_entities`` 非空，但 ``missing_entry_inputs`` 非空
+    - admitted:    ``applies_to_entities`` 非空 且 ``missing_entry_inputs`` 为空
+    """
+    if not spec.applies_to_entities:
+        return "unresolved"
+    if spec.missing_entry_inputs:
+        return "deferred"
+    return "admitted"
+
+
 def build_execution_plan(capability_specs: List[CapabilitySpec]) -> ExecutionPlan:
     """
     从 CapabilitySpec 列表构造 ExecutionPlan。
@@ -40,7 +70,7 @@ def build_execution_plan(capability_specs: List[CapabilitySpec]) -> ExecutionPla
     Returns
     -------
     ExecutionPlan
-        覆盖所有输入能力的最小执行计划。
+        覆盖所有输入能力的最小执行计划，包含 admission 状态区分。
     """
     state_set_plan: Dict[str, Any] = {}
     persistent_rule_plan: List[Dict[str, Any]] = []
@@ -51,8 +81,55 @@ def build_execution_plan(capability_specs: List[CapabilitySpec]) -> ExecutionPla
     plan_notes: List[str] = []
     unresolved: List[str] = []
 
+    # Admission 状态承接
+    admitted_capabilities: List[str] = []
+    deferred_capabilities: List[Dict[str, Any]] = []
+    unresolved_admission_items: List[Dict[str, Any]] = []
+
     for spec in capability_specs:
         capability_bindings.append(spec.capability_name)
+
+        # --- Admission 判定 ---
+        admission_status = _judge_admission(spec)
+
+        if admission_status == "unresolved":
+            unresolved_admission_items.append({
+                "capability_name": spec.capability_name,
+                "reason": "applies_to_entities 为空，无法确定能力作用对象",
+            })
+            plan_notes.append(
+                f"capability '{spec.capability_name}' admission=unresolved："
+                "applies_to_entities 为空，已跳过规则规划"
+            )
+            # unresolved capability 不进入规则计划，但仍汇聚目标量（供追溯）
+            for target_name, target_desc in spec.target_mapping.items():
+                assembly_plan.setdefault(target_name, {
+                    "source_capability": spec.capability_name,
+                    "description": target_desc,
+                })
+            unresolved.extend(spec.missing_inputs)
+            continue
+
+        if admission_status == "deferred":
+            deferred_capabilities.append({
+                "capability_name": spec.capability_name,
+                "missing_entry_inputs": list(spec.missing_entry_inputs),
+            })
+            plan_notes.append(
+                f"capability '{spec.capability_name}' admission=deferred："
+                f"缺少入口要素 {spec.missing_entry_inputs}，已推迟进入执行计划"
+            )
+            # deferred capability 不进入规则计划，但仍汇聚目标量（供追溯）
+            for target_name, target_desc in spec.target_mapping.items():
+                assembly_plan.setdefault(target_name, {
+                    "source_capability": spec.capability_name,
+                    "description": target_desc,
+                })
+            unresolved.extend(spec.missing_inputs)
+            continue
+
+        # admission_status == "admitted"
+        admitted_capabilities.append(spec.capability_name)
 
         # 将实体加入状态集合规划
         for entity_id in spec.applies_to_entities:
@@ -93,7 +170,7 @@ def build_execution_plan(capability_specs: List[CapabilitySpec]) -> ExecutionPla
                 "description": target_desc,
             }
 
-        # 汇聚未决项
+        # 汇聚未决项（执行层）
         unresolved.extend(spec.missing_inputs)
 
     # 去重未决项
@@ -108,4 +185,7 @@ def build_execution_plan(capability_specs: List[CapabilitySpec]) -> ExecutionPla
         capability_bindings=capability_bindings,
         plan_notes=plan_notes,
         unresolved_execution_inputs=unresolved,
+        admitted_capabilities=admitted_capabilities,
+        deferred_capabilities=deferred_capabilities,
+        unresolved_admission_items=unresolved_admission_items,
     )

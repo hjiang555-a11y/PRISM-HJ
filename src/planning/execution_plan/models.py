@@ -7,6 +7,7 @@ ExecutionPlan — 执行计划层最小规划对象 v0.1.
 - 哪些规则局部触发（local_rule_plan）
 - 何时检查触发（trigger_plan）
 - 如何提取结果（assembly_plan）
+- capability 的 admission 状态（admitted / deferred / unresolved）
 """
 
 from __future__ import annotations
@@ -42,7 +43,19 @@ class ExecutionPlan(BaseModel):
     plan_notes:
         规划备注列表（自由文本，供调试和审查）。
     unresolved_execution_inputs:
-        当前未补齐的执行输入项列表。
+        当前未补齐的规则执行层输入项列表（来自各 capability 的 missing_inputs）。
+
+    Capability Admission 状态字段
+    ----------------------------
+    admitted_capabilities:
+        已通过准入判定、进入本次执行计划的 capability 名称列表。
+        这些 capability 满足 applicability_conditions 且 missing_entry_inputs 为空。
+    deferred_capabilities:
+        因缺少必要入口要素而被延后、暂不进入本次执行计划的条目列表。
+        每个条目含 ``capability_name`` 和 ``missing_entry_inputs`` 字段。
+    unresolved_admission_items:
+        存在关键准入歧义、无法稳定纳入本次计划的条目列表。
+        每个条目含 ``capability_name`` 和 ``reason`` 字段。
     """
 
     state_set_plan: Dict[str, Any] = Field(
@@ -75,5 +88,30 @@ class ExecutionPlan(BaseModel):
     )
     unresolved_execution_inputs: List[str] = Field(
         default_factory=list,
-        description="当前未补齐的执行输入项",
+        description="当前未补齐的规则执行层输入项（来自各 capability 的 missing_inputs）",
+    )
+
+    # --- Capability Admission 状态字段 ---
+
+    admitted_capabilities: List[str] = Field(
+        default_factory=list,
+        description=(
+            "已通过准入判定、进入本次执行计划的 capability 名称列表。"
+            "满足 applicability_conditions 且 missing_entry_inputs 为空。"
+        ),
+    )
+    deferred_capabilities: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "因缺少必要入口要素而被延后的 capability 条目列表。"
+            "每个条目含 capability_name 和 missing_entry_inputs 字段。"
+            "这些 capability 方向合理，待补充输入后可重新进入计划。"
+        ),
+    )
+    unresolved_admission_items: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "存在关键准入歧义、无法稳定纳入本次计划的条目列表。"
+            "每个条目含 capability_name 和 reason 字段。"
+        ),
     )
