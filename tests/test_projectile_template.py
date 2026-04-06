@@ -1,5 +1,5 @@
 """
-Tests for the projectile scenario template (src.templates.projectile).
+Tests for the projectile scenario template (src.physics.templates.projectile).
 
 Verifies:
 * Template structure is valid (PSDL schema compliant).
@@ -21,7 +21,7 @@ from src.physics.dispatcher import (
     select_solver,
 )
 from src.schema.psdl import PSDL, ParticleObject, SourceRef
-from src.templates import projectile as proj_template
+from src.physics.templates import projectile as proj_template
 
 
 # ---------------------------------------------------------------------------

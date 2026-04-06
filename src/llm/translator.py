@@ -195,7 +195,7 @@ def _try_template_free_fall(user_query: str) -> Optional[PSDL]:
     """Return a free_fall PSDL built from the template, or ``None``."""
     try:
         from src.problem_semantic.extraction.extractors import extract_free_fall_params
-        from src.templates.free_fall import build_psdl as build_free_fall
+        from src.physics.templates.free_fall import build_psdl as build_free_fall
 
         params = extract_free_fall_params(user_query)
         if params is None:
@@ -210,7 +210,7 @@ def _try_template_projectile(user_query: str) -> Optional[PSDL]:
     """Return a projectile PSDL built from the template, or ``None``."""
     try:
         from src.problem_semantic.extraction.extractors import extract_projectile_params
-        from src.templates.projectile import build_psdl as build_projectile
+        from src.physics.templates.projectile import build_psdl as build_projectile
 
         params = extract_projectile_params(user_query)
         if params is None:
@@ -225,7 +225,7 @@ def _try_template_collision(user_query: str) -> Optional[PSDL]:
     """Return a collision PSDL built from the template, or ``None``."""
     try:
         from src.problem_semantic.extraction.extractors import extract_collision_params
-        from src.templates.collision import build_psdl as build_collision
+        from src.physics.templates.collision import build_psdl as build_collision
 
         params = extract_collision_params(user_query)
         if params is None:

@@ -20,7 +20,7 @@ from src.physics.dispatcher import (
     select_solver,
 )
 from src.schema.psdl import ParticleObject, PSDL, WorldSettings
-from src.templates import free_fall as ff_template
+from src.physics.templates import free_fall as ff_template
 
 
 # ---------------------------------------------------------------------------

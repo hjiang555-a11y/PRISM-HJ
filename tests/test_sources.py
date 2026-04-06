@@ -178,7 +178,7 @@ class TestFreeFallTemplateSourcePolicy:
     """Verify that the free_fall template does not reference standards-only sources."""
 
     def test_free_fall_default_source_refs_are_tier1(self, sources_by_id):
-        from src.templates.free_fall import _DEFAULT_SOURCE_REFS, build_psdl
+        from src.physics.templates.free_fall import _DEFAULT_SOURCE_REFS, build_psdl
 
         # Check default refs
         for ref in _DEFAULT_SOURCE_REFS:
@@ -190,7 +190,7 @@ class TestFreeFallTemplateSourcePolicy:
             )
 
     def test_free_fall_default_does_not_reference_nist(self):
-        from src.templates.free_fall import _DEFAULT_SOURCE_REFS
+        from src.physics.templates.free_fall import _DEFAULT_SOURCE_REFS
 
         ids = {r.source_id for r in _DEFAULT_SOURCE_REFS}
         assert "nist_time_frequency_division" not in ids, (
@@ -198,7 +198,7 @@ class TestFreeFallTemplateSourcePolicy:
         )
 
     def test_free_fall_default_does_not_reference_itu(self):
-        from src.templates.free_fall import _DEFAULT_SOURCE_REFS
+        from src.physics.templates.free_fall import _DEFAULT_SOURCE_REFS
 
         ids = {r.source_id for r in _DEFAULT_SOURCE_REFS}
         assert "itu_time_frequency_handbook" not in ids, (
@@ -206,7 +206,7 @@ class TestFreeFallTemplateSourcePolicy:
         )
 
     def test_free_fall_template_primary_source_role(self):
-        from src.templates.free_fall import _DEFAULT_SOURCE_REFS
+        from src.physics.templates.free_fall import _DEFAULT_SOURCE_REFS
 
         roles = {r.role for r in _DEFAULT_SOURCE_REFS}
         assert "primary_template_source" in roles, (
@@ -215,7 +215,7 @@ class TestFreeFallTemplateSourcePolicy:
 
     def test_build_psdl_source_refs_are_source_ref_objects(self):
         from src.schema.psdl import SourceRef
-        from src.templates.free_fall import build_psdl
+        from src.physics.templates.free_fall import build_psdl
 
         psdl = build_psdl()
         # Default source_refs should contain SourceRef objects

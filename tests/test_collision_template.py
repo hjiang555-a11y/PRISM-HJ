@@ -1,5 +1,5 @@
 """
-Tests for the collision scenario template (src.templates.collision).
+Tests for the collision scenario template (src.physics.templates.collision).
 
 Verifies:
 * Template structure is valid (PSDL schema compliant).
@@ -21,8 +21,8 @@ from src.physics.dispatcher import (
     select_solver,
 )
 from src.schema.psdl import PSDL, ParticleObject, SourceRef, WorldSettings
-from src.templates import collision as col_template
-from src.templates.collision import compute_final_velocities
+from src.physics.templates import collision as col_template
+from src.physics.templates.collision import compute_final_velocities
 
 
 # ---------------------------------------------------------------------------

@@ -7,5 +7,5 @@ known scenario class.
 
 Available templates (v0.1)
 --------------------------
-* :mod:`src.templates.free_fall` — vertical free fall, no drag.
+* :mod:`src.physics.templates.free_fall` — vertical free fall, no drag.
 """
