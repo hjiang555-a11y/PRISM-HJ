@@ -209,11 +209,20 @@ class TestMappers:
 
 class TestExecutionPlanBuilder:
     def _make_specs(self):
+        # Provide explicit_conditions with position, velocity, and mass for both
+        # entities so both particle_motion and contact_interaction are admitted.
         problem = ProblemSemanticSpec(
             source_input="test",
             entities=[{"name": "A"}, {"name": "B"}],
             targets_of_interest=[{"name": "final_pos", "description": "final position of A"}],
-            explicit_conditions=[],
+            explicit_conditions=[
+                {"entity": "A", "name": "position", "value": [0.0, 0.0, 0.0]},
+                {"entity": "A", "name": "velocity", "value": [2.0, 0.0, 0.0]},
+                {"entity": "A", "name": "mass", "value": 1.0},
+                {"entity": "B", "name": "position", "value": [1.0, 0.0, 0.0]},
+                {"entity": "B", "name": "velocity", "value": [0.0, 0.0, 0.0]},
+                {"entity": "B", "name": "mass", "value": 1.0},
+            ],
             candidate_domains=["mechanics"],
             candidate_capabilities=["particle_motion", "contact_interaction"],
             rule_extraction_inputs={},
@@ -453,6 +462,12 @@ class TestMinimumClosedLoop:
             {"name": "final_position", "description": "position after fall"}
         ]
         problem_spec.unresolved_items = []
+        # Provide explicit_conditions so particle_motion capability is admitted
+        problem_spec.explicit_conditions = [
+            {"entity": "ball", "name": "height", "value": 10.0},
+            {"entity": "ball", "name": "velocity", "value": 0.0},
+            {"entity": "ball", "name": "mass", "value": 1.0},
+        ]
 
         cap_specs = build_capability_specs(problem_spec)
         plan = build_execution_plan(cap_specs)
@@ -479,6 +494,13 @@ class TestMinimumClosedLoop:
         problem_spec = extract_problem_semantics(text)
         problem_spec.entities = [{"name": "A"}, {"name": "B"}]
         problem_spec.unresolved_items = []
+        # Provide explicit_conditions so contact_interaction capability is admitted
+        problem_spec.explicit_conditions = [
+            {"entity": "A", "name": "mass", "value": 1.0},
+            {"entity": "B", "name": "mass", "value": 1.0},
+            {"entity": "A", "name": "velocity", "value": 2.0},
+            {"entity": "B", "name": "velocity", "value": 0.0},
+        ]
 
         cap_specs = build_capability_specs(problem_spec)
         plan = build_execution_plan(cap_specs)
