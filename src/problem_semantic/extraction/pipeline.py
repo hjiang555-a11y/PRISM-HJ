@@ -55,7 +55,7 @@ def _extract_entity_model_hints(text: str) -> list[str]:
         hints.append("rigid_body")
     # 质点线索（含球、石、物体等通用词且无刚体旋转线索）
     elif re.search(
-        r"质点|particle|point\s*mass|小球|ball|stone|object|particle\s*like"
+        r"质点|particle|point\s*mass|小球|球|ball|stone|object|particle\s*like"
         r"|物体|box|block|物块|小物",
         lower,
     ):
@@ -222,15 +222,14 @@ def _enrich_from_extractors(spec: ProblemSemanticSpec) -> ProblemSemanticSpec:
             },
         ]
 
-        conditions: List[Dict[str, Any]] = [
+        # Use standardised condition names that capability mappers recognise
+        # (mappers check for keywords: "height"/"position", "velocity"/"v0",
+        #  "mass"/"m" in the condition name set)
+        spec.explicit_conditions = [
             {"name": "height", "value": h, "entity": "ball"},
             {"name": "mass", "value": mass, "entity": "ball"},
+            {"name": "initial_velocity", "value": [0, 0, v0z], "entity": "ball"},
         ]
-        if dur != 1.0:
-            conditions.append({"name": "duration", "value": dur, "entity": "ball"})
-        if v0z != 0.0:
-            conditions.append({"name": "v0z", "value": v0z, "entity": "ball"})
-        spec.explicit_conditions = conditions
 
         spec.targets_of_interest = [
             {"name": "final_z", "description": "落体最终高度"},
@@ -266,16 +265,11 @@ def _enrich_from_extractors(spec: ProblemSemanticSpec) -> ProblemSemanticSpec:
             },
         ]
 
-        conditions = [
+        spec.explicit_conditions = [
             {"name": "height", "value": h, "entity": "projectile"},
-            {"name": "v0x", "value": v0x, "entity": "projectile"},
+            {"name": "velocity", "value": [v0x, 0, 0], "entity": "projectile"},
             {"name": "mass", "value": mass, "entity": "projectile"},
         ]
-        if dur != 1.0:
-            conditions.append(
-                {"name": "duration", "value": dur, "entity": "projectile"}
-            )
-        spec.explicit_conditions = conditions
 
         spec.targets_of_interest = [
             {"name": "final_x", "description": "抛体最终水平位置"},
@@ -320,10 +314,10 @@ def _enrich_from_extractors(spec: ProblemSemanticSpec) -> ProblemSemanticSpec:
         ]
 
         spec.explicit_conditions = [
-            {"name": "m1", "value": m1, "entity": "ball_a"},
-            {"name": "v1x", "value": v1x, "entity": "ball_a"},
-            {"name": "m2", "value": m2, "entity": "ball_b"},
-            {"name": "v2x", "value": v2x, "entity": "ball_b"},
+            {"name": "mass", "value": m1, "entity": "ball_a"},
+            {"name": "velocity", "value": v1x, "entity": "ball_a"},
+            {"name": "mass", "value": m2, "entity": "ball_b"},
+            {"name": "velocity", "value": v2x, "entity": "ball_b"},
         ]
 
         spec.targets_of_interest = [

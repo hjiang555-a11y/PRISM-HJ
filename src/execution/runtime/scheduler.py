@@ -176,15 +176,18 @@ class Scheduler:
 
         # 主演化循环
         for step in range(self.steps):
-            # 1. 应用持续规则（欧拉积分）
+            # 1. 应用持续规则（更新速度 dv）
             self._apply_persistent_rules(state_set, persistent_executors)
 
-            # 2. 检查触发条件
+            # 2. 推进位置：所有实体 pos += v * dt（与规则执行分离）
+            self._advance_positions(state_set, self.dt)
+
+            # 3. 检查触发条件
             triggered = self._trigger_engine.check_triggers(
                 state_set, execution_plan.trigger_plan
             )
 
-            # 3. 激活局部规则
+            # 4. 激活局部规则
             if triggered:
                 for event in triggered:
                     self._apply_local_rules(state_set, local_executors, event, step)
@@ -206,7 +209,7 @@ class Scheduler:
         state_set: StateSet,
         executors: List[tuple],
     ) -> None:
-        """对每个实体应用所有持续规则（欧拉积分）。"""
+        """对每个实体应用所有持续规则（仅更新速度）。"""
         for executor, applies_to, rule_inputs in executors:
             entities = applies_to if applies_to else state_set.all_entity_ids()
             for entity_id in entities:
@@ -220,13 +223,24 @@ class Scheduler:
                     v = list(current.get("velocity", [0.0, 0.0, 0.0]))
                     v_new = [vi + dvi for vi, dvi in zip(v, dv)]
                     state_set.update_entity_state(entity_id, {"velocity": v_new})
-                    # 推进位置：x_new = x + v_new * dt
-                    pos = list(current.get("position", [0.0, 0.0, 0.0]))
-                    pos_new = [pi + vi * rule_inputs["dt"] for pi, vi in zip(pos, v_new)]
-                    state_set.update_entity_state(entity_id, {"position": pos_new})
                 else:
                     # 直接合并 delta（complete state update）
                     state_set.update_entity_state(entity_id, delta)
+
+    def _advance_positions(
+        self,
+        state_set: StateSet,
+        dt: float,
+    ) -> None:
+        """推进所有实体位置：x_new = x + v * dt（独立于规则执行）。"""
+        for entity_id in state_set.all_entity_ids():
+            current = state_set.get_entity_state(entity_id)
+            if current is None:
+                continue
+            pos = list(current.get("position", [0.0, 0.0, 0.0]))
+            vel = list(current.get("velocity", [0.0, 0.0, 0.0]))
+            pos_new = [pi + vi * dt for pi, vi in zip(pos, vel)]
+            state_set.update_entity_state(entity_id, {"position": pos_new})
 
     def _apply_local_rules(
         self,
