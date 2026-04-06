@@ -311,15 +311,16 @@
 
 以下内容是本轮 v0.1 约定后尚未完成、需在后续轮次处理的任务：
 
-1. **`ProblemSemanticSpec` 语义线索增强**：当前 `missing_entry_inputs` 的计算
-   依赖 mapper 对 `explicit_conditions` 名称的关键词匹配（如 `"position"`、
-   `"velocity"`、`"mass"` 等），这是粗粒度实现。未来应从 `ProblemSemanticSpec`
-   中更丰富的语义标注（实体类型、物理量类型）精确推断，减少关键词 fallback 的误判。
+1. **`ProblemSemanticSpec` 语义线索增强（P0 第四步已完成）**：`missing_entry_inputs` 的计算
+   已在 P0 第四步中增强。`ProblemSemanticSpec` 现新增四类 admission hints（`entity_model_hints`、
+   `interaction_hints`、`assumption_hints`、`query_hints`），由 extraction pipeline 通过
+   轻量规则法（regex / 关键词模式匹配）填充，mapper 按"A（语义 hints）→ B（explicit_conditions
+   关键词）→ C（fallback 默认值）"三层优先级消费这些信息。`explicit_conditions` 关键词匹配
+   降级为次优先，仅当语义层无明确 hint 时使用。
 
-2. **`applicability_conditions` 动态推断**：当前 mapper 中的 `applicability_conditions`
-   和 `assumptions` 是硬编码的默认物理假设，来源于 capability 定义本身，而非从
-   `ProblemSemanticSpec` 中语义提取。后续可通过 `rule_extraction_inputs` 中的
-   语义线索动态覆盖（如"问题明确说明有空气阻力"）。
+2. **`applicability_conditions` 动态推断（已部分完成）**：当前 mapper 中的 `assumptions`
+   已可根据 `assumption_hints` 动态区分来源（语义层标注 vs. 原型默认 fallback）。
+   完整的 `applicability_conditions` 动态推断留待后续轮次。
 
 3. **后续 capability 准入对齐**：每当新增 capability 族时，必须按本约定格式
    填写 `required_entry_inputs`、`missing_entry_inputs`、`applicability_conditions`、
@@ -331,3 +332,61 @@
 5. **deferred capability 的重入机制**：当前 `deferred_capabilities` 记录了缺失的
    入口要素，但尚无"补充后重新进入执行计划"的机制。后续可考虑在交互循环中
    让用户或 LLM 补充缺失要素后触发重新 admission 判定。
+
+---
+
+## 九、P0 第四步：ProblemSemanticSpec Admission Hints 增强（v0.1 补充）
+
+### 9.1 新增 admission hints 字段
+
+`ProblemSemanticSpec` 现在提供四类结构化 admission hints，由 extraction pipeline
+通过轻量规则法（regex / 关键词模式匹配）自动填充：
+
+| 字段 | 说明 | 常见值 |
+|------|------|--------|
+| `entity_model_hints` | 实体建模方式 | `"point_mass"`、`"rigid_body"` |
+| `interaction_hints` | 物理交互类型 | `"gravity_present"`、`"collision_possible"`、`"contact_possible"`、`"field_present"` |
+| `assumption_hints` | 物理假设 | `"ignore_air_resistance"`、`"elastic_collision"`、`"inelastic_collision"`、`"constant_g"`、`"smooth_surface"` |
+| `query_hints` | 目标查询类型 | `"ask_final_state"`、`"ask_state_at_time"`、`"ask_collision_outcome"`、`"ask_impact_time"` |
+
+### 9.2 extraction pipeline 如何填充 hints
+
+`extract_problem_semantics(input_text)` 调用四个专用提取函数：
+
+- `_extract_entity_model_hints`：识别"质点/小球/particle"→ `point_mass`；"刚体/rigid body"→ `rigid_body`
+- `_extract_interaction_hints`：识别"重力/落体/height/falls"→ `gravity_present`；"碰撞/collision"→ `collision_possible`
+- `_extract_assumption_hints`：识别"忽略空气阻力"→ `ignore_air_resistance`；"弹性碰撞"→ `elastic_collision`；"非弹性"→ `inelastic_collision`
+- `_extract_query_hints`：识别"X秒后/after X s"→ `ask_state_at_time`；"碰后"→ `ask_collision_outcome`；"落地时间"→ `ask_impact_time`
+
+### 9.3 mapper 三层信息来源优先级
+
+capability mapper（`particle_motion` 和 `contact_interaction`）现在明确按三层优先级消费信息：
+
+**A 层：语义层 hints（最高优先级）**
+- 来源：`ProblemSemanticSpec.interaction_hints`、`assumption_hints` 等
+- 示例：`interaction_hints` 含 `gravity_present` → `background_interaction_hints = ["gravity"]`
+- 示例：`assumption_hints` 含 `inelastic_collision` → `contact_model_hints = ["inelastic"]`，且 `assumptions` 中标注"来自语义层 assumption_hints"
+
+**B 层：explicit_conditions 关键词匹配（次优先级）**
+- 来源：`ProblemSemanticSpec.explicit_conditions` 中的条件名称集合
+- 示例：`explicit_conditions` 含 `{"name": "height", ...}` → `initial_position_per_entity` 不缺失
+- 示例：`explicit_conditions` 含 `{"name": "mass", ...}` → `mass_per_entity` 不缺失
+
+**C 层：原型默认 fallback（最低优先级）**
+- 仅当 A 层和 B 层均无信息时使用
+- 示例：无 `interaction_hints` 且无 `rule_extraction_inputs["background_interactions"]` → `background_hints = ["gravity"]`
+- 示例：无 `assumption_hints` 且无 `rule_extraction_inputs["contact_model_hints"]` → `contact_hints = ["elastic"]`
+- 示例：无语义 hints → `assumptions` 中包含"默认忽略空气阻力"等默认描述
+
+### 9.4 哪些 admission 判断不再只依赖关键词匹配
+
+本轮完成后，以下 admission 判断已有结构化语义来源（不再只依赖关键词）：
+
+1. **背景作用类型**（`background_interaction_hints`）：优先从 `interaction_hints` 读取 `gravity_present`，而不是直接 fallback 到硬编码 `["gravity"]`
+2. **碰撞模型类型**（`contact_model_hints`）：优先从 `assumption_hints` 读取 `elastic_collision` / `inelastic_collision`，而不是直接 fallback 到硬编码 `["elastic"]`
+3. **assumptions 来源标注**：`assumptions` 字段中现在区分"来自语义层"与"默认"两种来源，使调用方可溯源每条假设的来源层
+
+以下内容仍保持 B 层关键词匹配（语义层暂无更好来源）：
+- `initial_position_per_entity` 的缺失判断：仍依赖 `explicit_conditions` 名称关键词（`height`、`position` 等）
+- `initial_velocity_per_entity` 的缺失判断：仍依赖 `explicit_conditions` 名称关键词（`velocity`、`v0` 等）
+- `mass_per_entity` 的缺失判断：仍依赖 `explicit_conditions` 名称关键词（`mass`、`m` 等）

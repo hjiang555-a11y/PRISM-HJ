@@ -19,10 +19,16 @@ Admission 字段说明
   ["initial_position_per_entity", "initial_velocity_per_entity", "mass_per_entity"]
 - missing_entry_inputs: 从 ProblemSemanticSpec 中未能提取到的必要入口要素（动态计算）
 
-注意：hardcoded 的 applicability_conditions / assumptions / validity_limits 是
-当前原型的默认物理假设，来源于 particle_motion 能力本身，而非从 ProblemSemanticSpec
-中语义提取。后续如需基于语义线索动态调整，应从 problem_spec.rule_extraction_inputs
-中读取覆盖值。
+信息来源三层优先级（P0 第四步明确）
+------------------------------------
+A. 语义层 hints（entity_model_hints / interaction_hints / assumption_hints）
+   —— 来自 extraction pipeline 的结构化推断，优先消费
+B. explicit_conditions 的量纲/物理量线索
+   —— 条件名称关键词匹配，次优先
+C. 原型阶段 fallback 默认值
+   —— 仅当 A 和 B 均无信息时使用，作为最后兜底
+
+代码结构注释标注了每段逻辑属于哪一层来源。
 """
 
 from __future__ import annotations
@@ -63,56 +69,99 @@ def build_particle_motion_spec(
         if entity:
             initial_state_requirements.setdefault(entity, {})[cond.get("name", "unknown")] = cond.get("value")
 
-    # 从 rule_extraction_inputs 推断背景作用提示
-    # 来源：ProblemSemanticSpec 中的语义线索；默认候选重力为原型 fallback
-    background_hints: list = list(
-        problem_spec.rule_extraction_inputs.get("background_interactions", [])
-    )
+    # ------------------------------------------------------------------
+    # 背景作用提示（background_interaction_hints）
+    # 信息来源优先级：A → B → C
+    # ------------------------------------------------------------------
+
+    # A. 语义层：来自 interaction_hints（extraction pipeline 推断）
+    background_hints: list = []
+    if "gravity_present" in problem_spec.interaction_hints:
+        background_hints.append("gravity")
+
+    # B. 来自 rule_extraction_inputs（上层显式传入的线索，优先于 C）
     if not background_hints:
-        # 原型默认 fallback：尚无语义线索时使用重力作为候选背景作用
+        background_hints = list(
+            problem_spec.rule_extraction_inputs.get("background_interactions", [])
+        )
+
+    # C. 原型默认 fallback：A 和 B 均无信息时使用重力作为候选背景作用
+    if not background_hints:
         background_hints = ["gravity"]
 
     missing_runtime: list = list(problem_spec.unresolved_items)
 
-    # --- Admission 层：计算 missing_entry_inputs ---
-    # 检查从 ProblemSemanticSpec 中是否能找到各必要入口要素
-    missing_entry: list = []
+    # ------------------------------------------------------------------
+    # Admission 层：计算 missing_entry_inputs
+    # 对每个必要入口要素，按 A → B → C 顺序判断是否已知
+    # ------------------------------------------------------------------
 
-    # 检查是否有实体可作用（applies_to_entities 将为空则在 builder 中判定 unresolved）
-    # 以下检查各实体的必要入口要素
-
-    # 收集明确给出条件的名称集合，用于粗粒度判断
+    # B. 来自 explicit_conditions 的量纲/物理量线索（名称关键词匹配）
     condition_names = {cond.get("name", "") for cond in problem_spec.explicit_conditions}
 
-    # 判断是否有初始位置信息（position / height / x / y / z 等关键词）
+    missing_entry: list = []
+
+    # --- 初始位置 ---
+    # A. 语义层：如有实体初始状态要求则认为已知
+    _has_position_from_semantics = bool(initial_state_requirements)
+    # B. 显式条件关键词
     _position_keywords = {"position", "height", "x", "y", "z", "initial_position", "x0", "y0", "z0"}
-    if not (_position_keywords & condition_names) and not initial_state_requirements:
+    _has_position_from_conditions = bool(_position_keywords & condition_names)
+    # 汇总判断
+    if not _has_position_from_semantics and not _has_position_from_conditions:
         missing_entry.append("initial_position_per_entity")
 
-    # 判断是否有初始速度信息（velocity / speed / v / vx / vy / vz 等关键词）
+    # --- 初始速度 ---
+    # A. 语义层：assumption_hints 中有速度相关假设（如自由落体默认 v0=0）
+    #    如果 interaction_hints 含 gravity_present 且 query_hints 含 ask_state_at_time
+    #    则认为速度条件很可能在问题中有描述，但我们不能盲目 admit；此处仅降低 B 优先级
+    _has_velocity_from_semantics = False  # 语义层暂不直接推断速度已知
+    # B. 显式条件关键词
     _velocity_keywords = {"velocity", "speed", "v", "vx", "vy", "vz", "initial_velocity", "v0", "v0x", "v0y"}
-    if not (_velocity_keywords & condition_names):
+    _has_velocity_from_conditions = bool(_velocity_keywords & condition_names)
+    # 汇总判断
+    if not _has_velocity_from_semantics and not _has_velocity_from_conditions:
         missing_entry.append("initial_velocity_per_entity")
 
-    # 判断是否有质量信息
+    # --- 质量 ---
+    # A. 语义层：当前无直接质量 hint（质量信息主要来自数值条件）
+    _has_mass_from_semantics = False
+    # B. 显式条件关键词
     _mass_keywords = {"mass", "m", "mass_kg", "weight"}
-    if not (_mass_keywords & condition_names):
+    _has_mass_from_conditions = bool(_mass_keywords & condition_names)
+    # 汇总判断
+    if not _has_mass_from_semantics and not _has_mass_from_conditions:
         missing_entry.append("mass_per_entity")
 
-    # 准入条件字段（Capability Admission Fields）
-    # 注：以下为 particle_motion 能力本身的默认物理假设，非从语义层动态提取
+    # ------------------------------------------------------------------
+    # 准入条件字段（applicability_conditions / assumptions / validity_limits）
+    # 信息来源优先级：A → C
+    # ------------------------------------------------------------------
+
     applicability_conditions = [
         "实体可以建模为质点（无旋转、无形变）",
         "背景作用在实体运动的时空范围内连续且空间均匀",
         "实体状态演化可用连续时间微分方程描述",
     ]
-    assumptions = [
-        # 原型默认假设；若 background_hints 来自语义层，此条可被覆盖
-        "默认忽略空气阻力（除非 background_interaction_hints 中包含 'drag'）",
+
+    # assumptions 根据 semantic hints（A 层）动态调整，未知时使用原型默认值（C 层）
+    assumptions: list = []
+
+    # A. 语义层：根据 assumption_hints 推断
+    if "ignore_air_resistance" in problem_spec.assumption_hints:
+        # 语义层已明确忽略空气阻力
+        assumptions.append("忽略空气阻力（来自语义层 assumption_hints）")
+    else:
+        # C. 原型默认 fallback：未指定时默认忽略空气阻力
+        assumptions.append("默认忽略空气阻力（除非 background_interaction_hints 中包含 'drag'）")
+
+    # C. 原型默认假设（与语义层无关的物理基础假设）
+    assumptions.extend([
         "重力加速度恒定（g = 9.8 m/s²）",
         "质量在运动过程中保持不变",
         "质点近似：实体的旋转和形变对运动轨迹无贡献",
-    ]
+    ])
+
     validity_limits = [
         "非相对论性低速范围（v ≪ c）",
         "引力场在实体轨迹尺度上的空间非均匀性可忽略",
