@@ -1,5 +1,5 @@
 """
-问题语义提取流水线 v0.1.
+问题语义提取流水线 v0.2.
 
 extract_problem_semantics(input_text) -> ProblemSemanticSpec
 
@@ -12,13 +12,21 @@ extract_problem_semantics(input_text) -> ProblemSemanticSpec
 P0 第四步更新：新增轻量规则法提取 admission hints，填充
 entity_model_hints / interaction_hints / assumption_hints / query_hints，
 为 capability mapper 提供更结构化的上游语义来源。
+
+v0.2 更新：对已知场景类型（free_fall / projectile / collision），利用
+regex extractors + classify_scenario 填充 entities、explicit_conditions、
+targets_of_interest 和 rule_execution_inputs，实现 fully populated spec。
 """
 
 from __future__ import annotations
 
+import logging
 import re
+from typing import Any, Dict, List, Optional
 
 from src.problem_semantic.models import ProblemSemanticSpec
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +175,190 @@ def _extract_query_hints(text: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Enrichment: populate spec fields from regex extractors
+# ---------------------------------------------------------------------------
+
+def _enrich_from_extractors(spec: ProblemSemanticSpec) -> ProblemSemanticSpec:
+    """
+    Best-effort enrichment of *spec* using regex extractors and scenario
+    classification.
+
+    If the scenario is recognised and numeric parameters can be extracted,
+    populates ``entities``, ``explicit_conditions``, ``targets_of_interest``,
+    ``rule_execution_inputs``, and ``candidate_capabilities``.  Otherwise
+    the spec is returned unchanged (skeleton mode).
+    """
+    from src.llm.translator import classify_scenario
+    from src.problem_semantic.extraction.extractors import (
+        extract_collision_params,
+        extract_free_fall_params,
+        extract_projectile_params,
+    )
+
+    scenario: Optional[str] = classify_scenario(spec.source_input)
+    if scenario is None:
+        return spec
+
+    # ----- free_fall -----
+    if scenario == "free_fall":
+        params = extract_free_fall_params(spec.source_input)
+        if params is None:
+            return spec
+
+        h = params["height"]
+        dur = params["duration"]
+        mass = params["mass"]
+        v0z = params["v0z"]
+
+        spec.entities = [
+            {
+                "name": "ball",
+                "mass": mass,
+                "initial_position": [0, 0, h],
+                "initial_velocity": [0, 0, v0z],
+            },
+        ]
+
+        conditions: List[Dict[str, Any]] = [
+            {"name": "height", "value": h, "entity": "ball"},
+            {"name": "mass", "value": mass, "entity": "ball"},
+        ]
+        if dur != 1.0:
+            conditions.append({"name": "duration", "value": dur, "entity": "ball"})
+        if v0z != 0.0:
+            conditions.append({"name": "v0z", "value": v0z, "entity": "ball"})
+        spec.explicit_conditions = conditions
+
+        spec.targets_of_interest = [
+            {"name": "final_z", "description": "落体最终高度"},
+            {"name": "final_vz", "description": "落体最终速度(z)"},
+        ]
+
+        spec.rule_execution_inputs = {
+            "scenario_type": "free_fall",
+            "gravity_vector": [0, 0, -9.8],
+            "dt": 0.01,
+            "steps": round(dur / 0.01),
+        }
+
+        spec.candidate_capabilities = ["particle_motion"]
+
+    # ----- projectile -----
+    elif scenario == "projectile":
+        params = extract_projectile_params(spec.source_input)
+        if params is None:
+            return spec
+
+        h = params["height"]
+        v0x = params["v0x"]
+        dur = params["duration"]
+        mass = params["mass"]
+
+        spec.entities = [
+            {
+                "name": "projectile",
+                "mass": mass,
+                "initial_position": [0, 0, h],
+                "initial_velocity": [v0x, 0, 0],
+            },
+        ]
+
+        conditions = [
+            {"name": "height", "value": h, "entity": "projectile"},
+            {"name": "v0x", "value": v0x, "entity": "projectile"},
+            {"name": "mass", "value": mass, "entity": "projectile"},
+        ]
+        if dur != 1.0:
+            conditions.append(
+                {"name": "duration", "value": dur, "entity": "projectile"}
+            )
+        spec.explicit_conditions = conditions
+
+        spec.targets_of_interest = [
+            {"name": "final_x", "description": "抛体最终水平位置"},
+            {"name": "final_z", "description": "抛体最终高度"},
+            {"name": "final_vz", "description": "抛体最终竖直速度"},
+        ]
+
+        spec.rule_execution_inputs = {
+            "scenario_type": "projectile",
+            "gravity_vector": [0, 0, -9.8],
+            "dt": 0.01,
+            "steps": round(dur / 0.01),
+        }
+
+        spec.candidate_capabilities = ["particle_motion"]
+
+    # ----- collision -----
+    elif scenario == "collision":
+        params = extract_collision_params(spec.source_input)
+        if params is None:
+            return spec
+
+        m1 = params["m1"]
+        m2 = params["m2"]
+        v1x = params["v1x"]
+        v2x = params["v2x"]
+        ctype = params["collision_type"]
+
+        spec.entities = [
+            {
+                "name": "ball_a",
+                "mass": m1,
+                "initial_position": [0, 0, 0],
+                "initial_velocity": [v1x, 0, 0],
+            },
+            {
+                "name": "ball_b",
+                "mass": m2,
+                "initial_position": [1, 0, 0],
+                "initial_velocity": [v2x, 0, 0],
+            },
+        ]
+
+        spec.explicit_conditions = [
+            {"name": "m1", "value": m1, "entity": "ball_a"},
+            {"name": "v1x", "value": v1x, "entity": "ball_a"},
+            {"name": "m2", "value": m2, "entity": "ball_b"},
+            {"name": "v2x", "value": v2x, "entity": "ball_b"},
+        ]
+
+        spec.targets_of_interest = [
+            {"name": "final_v1x", "description": "碰后物体A速度(x)"},
+            {"name": "final_v2x", "description": "碰后物体B速度(x)"},
+        ]
+
+        spec.rule_execution_inputs = {
+            "scenario_type": "collision",
+            "restitution": 1.0 if ctype == "elastic" else 0.0,
+            "contact_normal": [1, 0, 0],
+            "dt": 0.01,
+            "steps": 100,
+        }
+
+        spec.candidate_capabilities = ["particle_motion", "contact_interaction"]
+
+    else:
+        return spec
+
+    # Store scenario_type in rule_extraction_inputs
+    spec.rule_extraction_inputs["scenario_type"] = scenario
+
+    # Remove resolved unresolved_items
+    _resolved = {
+        "entity_extraction_pending",
+        "targets_of_interest_pending",
+        "explicit_conditions_pending",
+        "rule_execution_inputs_pending",
+    }
+    spec.unresolved_items = [
+        item for item in spec.unresolved_items if item not in _resolved
+    ]
+
+    return spec
+
+
+# ---------------------------------------------------------------------------
 # Public pipeline entry point
 # ---------------------------------------------------------------------------
 
@@ -174,11 +366,10 @@ def extract_problem_semantics(input_text: str) -> ProblemSemanticSpec:
     """
     从输入文本构造 ProblemSemanticSpec。
 
-    当前最小实现返回候选化骨架，所有提取字段标记为待填充。
-    上层调用者可在此基础上接入 LLM 提取器或规则提取器进行填充。
-
-    P0 第四步：新增轻量规则法提取 admission hints，填充
-    entity_model_hints / interaction_hints / assumption_hints / query_hints。
+    对已知场景类型（free_fall / projectile / collision），利用 regex
+    extractors 和 classify_scenario 填充 entities、explicit_conditions、
+    targets_of_interest 和 rule_execution_inputs。未识别场景时返回
+    候选化骨架（skeleton mode）。
 
     Parameters
     ----------
@@ -188,7 +379,7 @@ def extract_problem_semantics(input_text: str) -> ProblemSemanticSpec:
     Returns
     -------
     ProblemSemanticSpec
-        候选化的问题语义规格，未决项已记录在 ``unresolved_items`` 中；
+        尽力填充的问题语义规格。未决项记录在 ``unresolved_items`` 中；
         admission hints 字段已由轻量规则法尽力填充。
     """
     entity_model_hints = _extract_entity_model_hints(input_text)
@@ -196,7 +387,7 @@ def extract_problem_semantics(input_text: str) -> ProblemSemanticSpec:
     assumption_hints = _extract_assumption_hints(input_text)
     query_hints = _extract_query_hints(input_text)
 
-    return ProblemSemanticSpec(
+    spec = ProblemSemanticSpec(
         source_input=input_text,
         entities=[],
         targets_of_interest=[],
@@ -218,3 +409,7 @@ def extract_problem_semantics(input_text: str) -> ProblemSemanticSpec:
         assumption_hints=assumption_hints,
         query_hints=query_hints,
     )
+
+    spec = _enrich_from_extractors(spec)
+
+    return spec
