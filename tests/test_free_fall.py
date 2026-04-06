@@ -33,7 +33,7 @@ from src.schema.psdl import (
     SpaceBox,
     WorldSettings,
 )
-from src.templates import free_fall as ff_template
+from src.physics.templates import free_fall as ff_template
 
 
 # ---------------------------------------------------------------------------

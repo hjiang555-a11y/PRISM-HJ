@@ -86,13 +86,13 @@ text
   LLM 解释器 → 自然语言答案
 核心模块与职责（时空视角）
 模块	路径	时空相关职责
-时空语义提取	src/problem_semantic/	从自然语言中抽取时间状语、空间介词、条件从句，生成 SpatialTemporalSpec
-事件与触发条件	src/planning/events.py（待定）	整体应为一个总事件，可以分化成子事件驱动下一步；定义事件类型（碰撞、到达边界、定时采样）及时空判据
-演化调度器	src/planning/scheduler.py（待定）¬¬¬	构建执行图（DAG），决定并行/串行/分支
+模块	路径	时空相关职责
+时空语义提取	src/problem_semantic/	从自然语言中抽取时间状语、空间介词、条件从句，生成 ProblemSemanticSpec
+事件与触发检测	src/execution/runtime/trigger_engine.py	检测碰撞、边界穿透等触发条件，通知调度器切换公理
+演化调度器	src/execution/runtime/scheduler.py	时间步进主循环，协调持久规则与局部规则的执行
 公理映射器	src/capabilities/	将物理公理（牛顿定律、动量守恒等）封装为可调用的规则，声明其适用时空条件
-时空执行引擎	src/physics/	在给定时空区间内推进状态，处理事件触发，支持多规则叠加
-时空结果存储	src/physics/result.py（待定）	按时间步或事件点存储状态快照，便于查询“t=1秒时”
-________________________________________
+时空执行引擎	src/execution/	规则驱动的状态演化核心（持久规则 + 局部规则 + 状态管理）
+时空结果组装	src/execution/assembly/result_assembler.py	按时间步或事件点存储状态快照，输出 ExecutionResult
 公理与时空条件映射
 以下列出当前已实现的公理及其时空触发条件、控制模式和所需时空坐标（时空坐标可以方便变换，适应观察者设定）。
 1. 自由落体（匀加速运动）
@@ -128,27 +128,32 @@ ________________________________________
 电磁力	带电粒子在场中	并行/条件	电荷、场矢量	待定
 ________________________________________
 当前实现状态
-基于 2026-04-06 代码冻结。系统已具备时空事件的基础框架，部分公理已支持串行和条件触发，并行能力及完整调度器正在建设中。
-✅ 已完成（时空相关）
-功能	时空控制能力
-时空语义提取	能从自然语言中抽取时间状语（“1秒后”）、空间位置（“高度5米”）、条件（“当…时”）
-串行演化	自由落体 → 碰撞 → 反弹 的时序衔接
-条件触发事件	碰撞检测、边界触发已集成到 PyBullet 中
-公理映射到时空区域	CapabilitySpec 中包含 applicability_conditions（如“在重力场中”）
-执行计划调度	ExecutionPlan 支持串行规则列表，条件分支待完善
-🚧 部分完成（时空演进中）
+当前实现状态
+基于 2026-04-06 代码重整。系统具备两条并行路径：旧管线（NL→PSDL模板→Dispatcher→求解器）已冻结但可用；新管线（语义提取→能力表示→执行计划→规则驱动调度器）核心接口已定义，部分规则已实现。
+✅ 已完成
+功能	说明
+PSDL 数据模型	Pydantic v2 schema，含粒子、世界、验证目标、出处引用
+时空语义提取	正则+提示词提取时间状语、空间位置、条件；输出 ProblemSemanticSpec
+能力表示层	ParticleMotionCapabilitySpec / ContactInteractionCapabilitySpec，含 admission hints
+执行计划生成	ExecutionPlan 支持 admitted / deferred / unresolved 三态准入
+规则执行器接口	PersistentRuleExecutor（重力）、LocalRuleExecutor（碰撞）已实现
+运行时调度器	Scheduler 时间步进主循环 + TriggerEngine 触发检测
+串行演化	自由落体 → 碰撞 → 反弹（解析求解器 + PyBullet 数值求解器）
+后验校验	run_validation() 对比仿真结果与期望目标
+出处治理	SourceRef 分级（Tier 1/2/标准），合规校验
+🚧 部分完成
 项目	当前能力	待完善
+新旧管线整合	两条管线独立可运行	main.py 尚未切换到新管线入口
 并行公理叠加	尚无显式并行框架	需实现多力同时作用（重力+阻力）的加法器
-时空区域定义	仅有边界框，无任意形状区域	支持圆形、多边形区域及条件谓词
+时空区域定义	仅有边界框	支持圆形、多边形区域及条件谓词
 时间离散化控制	固定时间步长	支持自适应步长、事件精确定位
 时空结果查询	仅返回最终状态	按任意时空坐标查询中间状态
-复杂条件分支	无	支持 if-then-else 执行路径
 📅 规划中（未开始）
-•	全功能演化调度器：支持 DAG 调度、并行分支、同步点。
+•	全功能 DAG 调度器：支持并行分支、同步点、条件路由。
 •	时空连续性检查：确保跨区域边界条件连续（位置、速度连续）。
 •	多时空尺度模拟：不同区域使用不同时间步长。
 •	相对论时空（远期）：洛伦兹变换下的公理调用。
-________________________________________
+
 使用示例
 示例 1：串行控制（自由落体 + 碰撞）
 bash
@@ -170,38 +175,84 @@ bash
 python main.py --question "球受重力和空气阻力（k=0.1），初速度竖直向上20m/s，求最高点时间。"
 并行模式：重力与阻力同时作用，合力 F=mg−kvF=mg−kv。
 ________________________________________
-项目结构（可变更）
+项目结构
 text
 PRISM-HJ/
 ├── LICENSE
 ├── README.md
 ├── requirements.txt
-├── main.py                      # 主入口
+├── main.py                          # 主入口（CLI）
 ├── src/
-│   ├── schema/                  # PSDL 数据模型（含时空字段）
-│   ├── physics/                 # 公理执行引擎（解析/PyBullet）
-│   ├── llm/                     # 自然语言翻译/解释
-│   ├── problem_semantic/        # 时空语义提取（ProblemSemanticSpec）
-│   ├── capabilities/            # 公理封装（CapabilitySpec）
-│   ├── planning/                # 事件解析、演化调度、执行计划
-│   │   ├── events.py            # 事件与触发条件（待定）
-│   │   ├── scheduler.py         # 调度器（待定）
-│   │   └── execution_plan.py    # 执行计划（已有基础）
-│   └── spacetime/               # 时空数据结构（待扩展）
-├── tests/
-└── examples/
+│   ├── schema/                      # PSDL 数据模型（含时空字段、单位、探索配置）
+│   │   ├── psdl.py                  # PSDL v0.1 核心契约
+│   │   ├── units.py                 # SI 单位注册与量纲校验
+│   │   └── exploration.py           # 探索配置 schema（预留）
+│   ├── physics/                     # 公理执行引擎（解析求解 / PyBullet 数值求解）
+│   │   ├── analytic.py              # 精确闭合解（自由落体、抛体、碰撞）
+│   │   ├── engine.py                # PyBullet 数值仿真器
+│   │   ├── dispatcher.py            # 求解器路由（场景类型 → 求解器）
+│   │   └── templates/               # PSDL 模板构建器（已知场景的参数 → PSDL）
+│   │       ├── free_fall.py         # 自由落体模板
+│   │       ├── projectile.py        # 抛体运动模板
+│   │       └── collision.py         # 一维碰撞模板
+│   ├── llm/                         # 自然语言翻译 / 解释（Ollama HTTP API）
+│   │   └── translator.py            # NL → PSDL 翻译；classify_scenario；generate_answer
+│   ├── problem_semantic/            # 时空语义提取
+│   │   ├── models.py                # ProblemSemanticSpec 输出模型
+│   │   └── extraction/              # 提取管线
+│   │       ├── pipeline.py          # 入口：extract_problem_semantics()
+│   │       └── extractors.py        # 场景参数正则提取器
+│   ├── capabilities/                # 公理封装（CapabilitySpec）
+│   │   ├── builder.py               # 语义 → 能力列表路由
+│   │   ├── common/base.py           # CapabilitySpec 基类
+│   │   ├── particle_motion/         # 粒子运动能力（重力、阻力等）
+│   │   │   ├── spec.py              # ParticleMotionCapabilitySpec
+│   │   │   └── mapper.py            # 语义 → 粒子运动能力映射
+│   │   └── contact_interaction/     # 接触交互能力（碰撞等）
+│   │       ├── spec.py              # ContactInteractionCapabilitySpec
+│   │       └── mapper.py            # 语义 → 接触交互能力映射
+│   ├── planning/                    # 执行计划生成
+│   │   └── execution_plan/          # 计划构建与准入逻辑
+│   │       ├── models.py            # ExecutionPlan 模型
+│   │       └── builder.py           # 能力列表 → 执行计划
+│   ├── execution/                   # 新执行核心（规则驱动演化）
+│   │   ├── rules/                   # 规则执行器
+│   │   │   ├── persistent/          # 持久规则（每步施加：重力等）
+│   │   │   │   ├── base.py          # PersistentRuleExecutor（ABC）
+│   │   │   │   └── gravity.py       # ConstantGravityRule
+│   │   │   └── local/               # 局部规则（触发式：碰撞等）
+│   │   │       ├── base.py          # LocalRuleExecutor（ABC）
+│   │   │       └── impulsive_collision.py  # ImpulsiveCollisionRule
+│   │   ├── state/                   # 状态管理
+│   │   │   └── state_set.py         # StateSet — 多实体状态集合
+│   │   ├── runtime/                 # 运行时调度
+│   │   │   ├── scheduler.py         # Scheduler — 时间步进主循环
+│   │   │   └── trigger_engine.py    # TriggerEngine — 触发检测
+│   │   └── assembly/                # 结果组装
+│   │       └── result_assembler.py  # ResultAssembler → ExecutionResult
+│   ├── validation/                  # 后验校验（仿真结果 vs 期望目标）
+│   │   └── runner.py                # run_validation()
+│   └── sources/                     # 出处注册与治理
+│       ├── registry.py              # 加载 data/sources/registry.yaml
+│       └── validation.py            # SourceRef 合规校验
+├── data/
+│   └── sources/registry.yaml        # 出处分级定义（Tier 1/2/标准）
+├── tests/                           # 单元测试（459 项）
+├── examples/
+│   └── questions.txt                # 示例物理问题
+└── docs/                            # 设计文档
 ________________________________________
 扩展与定制
 添加新公理（如空气阻力）
 1.	定义公理的时空适用范围：在 CapabilitySpec 中填写 applicability_conditions（如“速度>0的区域”）。
 2.	指定控制模式：并行（与重力叠加）或条件触发（速度阈值）。
-3.	在 physics/engine.py 的 step 中实现力叠加。
+3.	在 execution/rules/ 中实现新的 PersistentRuleExecutor 或 LocalRuleExecutor。
 4.	更新 LLM 提示，让系统能从自然语言中提取阻力系数。
 自定义时空触发条件
-1.	在 planning/events.py 中定义新事件类，实现 condition(state, t) 谓词。
+1.	在 execution/runtime/trigger_engine.py 中定义新触发类型。
 2.	将事件注册到调度器，指定当条件满足时调用的公理。
 调整调度策略
-修改 scheduler.py 中的 build_execution_graph 方法，可支持：
+修改 execution/runtime/scheduler.py 中的执行循环，可支持：
 •	基于优先级的调度
 •	时间步长自适应
 •	事件驱动的动态重排

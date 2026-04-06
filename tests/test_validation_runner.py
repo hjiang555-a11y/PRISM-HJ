@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 from src.schema.psdl import ValidationTarget
-from src.templates.free_fall import build_psdl
+from src.physics.templates.free_fall import build_psdl
 from src.validation.runner import run_validation, _EXTRACTORS
 
 
