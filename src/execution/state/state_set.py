@@ -69,6 +69,100 @@ class StateSet:
         self._states: Dict[str, EntityState] = {}
         # 用于存储全局查询目标（如触发事件时刻、碰撞记录等）
         self._target_registry: Dict[str, Any] = {}
+        # P3: 状态历史记录 — 按时间 t 存储各实体的快照副本
+        self._history: List[Dict[str, Any]] = []
+
+    # ------------------------------------------------------------------
+    # 状态历史（P3 新增）
+    # ------------------------------------------------------------------
+
+    def record_snapshot(self, t: float) -> None:
+        """
+        记录当前时刻所有实体状态的快照（深拷贝）。
+
+        Parameters
+        ----------
+        t:
+            当前仿真时间（秒）。
+        """
+        snapshot: Dict[str, Any] = {"t": t, "entities": {}}
+        for entity_id, state in self._states.items():
+            snapshot["entities"][entity_id] = dict(state)
+        self._history.append(snapshot)
+
+    def query_state_at(self, t: float) -> Optional[Dict[str, Any]]:
+        """
+        查询任意时刻 t 的状态（线性插值）。
+
+        若 t 恰好命中快照时间则直接返回；否则在相邻快照之间
+        对 position 和 velocity 进行线性插值。
+
+        Parameters
+        ----------
+        t:
+            查询时间（秒）。
+
+        Returns
+        -------
+        Optional[Dict[str, Any]]
+            包含所有实体状态的字典；若历史为空则返回 None。
+        """
+        if not self._history:
+            return None
+
+        # 精确命中
+        for snap in self._history:
+            if abs(snap["t"] - t) < 1e-12:
+                return dict(snap["entities"])
+
+        # 找到相邻快照
+        before: Optional[Dict[str, Any]] = None
+        after: Optional[Dict[str, Any]] = None
+        for snap in self._history:
+            if snap["t"] <= t:
+                if before is None or snap["t"] > before["t"]:
+                    before = snap
+            if snap["t"] >= t:
+                if after is None or snap["t"] < after["t"]:
+                    after = snap
+
+        if before is None and after is None:
+            return None
+        if before is None:
+            return dict(after["entities"])  # type: ignore[union-attr]
+        if after is None:
+            return dict(before["entities"])
+        if abs(after["t"] - before["t"]) < 1e-12:
+            return dict(before["entities"])
+
+        # 线性插值
+        alpha = (t - before["t"]) / (after["t"] - before["t"])
+        result: Dict[str, Any] = {}
+        for entity_id in before["entities"]:
+            if entity_id not in after["entities"]:
+                result[entity_id] = dict(before["entities"][entity_id])
+                continue
+            s_before = before["entities"][entity_id]
+            s_after = after["entities"][entity_id]
+            interpolated: Dict[str, Any] = {}
+            for key in s_before:
+                val_b = s_before[key]
+                val_a = s_after.get(key, val_b)
+                if isinstance(val_b, (list, tuple)) and isinstance(val_a, (list, tuple)):
+                    interpolated[key] = [
+                        vb + alpha * (va - vb)
+                        for vb, va in zip(val_b, val_a)
+                    ]
+                elif isinstance(val_b, (int, float)) and isinstance(val_a, (int, float)):
+                    interpolated[key] = val_b + alpha * (val_a - val_b)
+                else:
+                    interpolated[key] = val_b
+            result[entity_id] = interpolated
+        return result
+
+    def get_history(self) -> List[Dict[str, Any]]:
+        """返回完整的状态历史记录。"""
+        return list(self._history)
 
     # ------------------------------------------------------------------
     # 实体状态读写

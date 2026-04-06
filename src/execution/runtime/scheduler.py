@@ -1,23 +1,22 @@
 """
-Scheduler — 执行计划驱动下的状态演化控制入口 v0.1.
+Scheduler — 执行计划驱动下的状态演化控制入口 v0.2.
 
-根据 ExecutionPlan 驱动以下最小闭环：
-1. 初始化 active persistent rules（背景重力等）
-2. 逐步演化状态
+根据 ExecutionPlan 驱动以下闭环：
+1. 初始化 active persistent rules（背景重力、阻力等）
+2. 逐步演化状态，支持自适应步长
 3. 每步调用 TriggerEngine 检查局部触发
 4. 触发时激活 LocalRuleExecutor
-5. 演化结束后调用 ResultAssembler
+5. 记录状态历史快照（支持中间状态查询）
+6. 演化结束后调用 ResultAssembler
 
-当前不要求
-----------
-- 高级调度策略
-- 并发执行
-- 多 capability 深度耦合优化
+P2 新增：Force Accumulator — 多规则 dv 叠加
+P3 新增：自适应步长 + 中间状态历史
 """
 
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any, Dict, List, Optional
 
 from src.execution.assembly.result_assembler import ExecutionResult, ResultAssembler
@@ -25,6 +24,7 @@ from src.execution.rules.registry import DEFAULT_RULE_REGISTRY, RuleRegistry
 from src.execution.runtime.trigger_engine import TriggerEngine
 from src.execution.state.state_set import StateSet
 from src.planning.execution_plan.models import ExecutionPlan
+from src.schema.spatiotemporal import AdaptiveTimestepConfig
 
 logger = logging.getLogger(__name__)
 
@@ -56,12 +56,14 @@ class Scheduler:
         steps: int = 100,
         contact_threshold: float = 0.5,
         rule_registry: Optional[RuleRegistry] = None,
+        adaptive_config: Optional[AdaptiveTimestepConfig] = None,
     ) -> None:
         self.dt = dt
         self.steps = steps
         self._trigger_engine = TriggerEngine(contact_threshold=contact_threshold)
         self._assembler = ResultAssembler()
         self._registry = rule_registry if rule_registry is not None else DEFAULT_RULE_REGISTRY
+        self._adaptive = adaptive_config
 
     def run(
         self,
@@ -173,14 +175,30 @@ class Scheduler:
             )
 
         trigger_records: List[Dict[str, Any]] = []
+        current_dt = self.dt
+        t = 0.0  # 仿真时间
+
+        # 记录初始快照
+        state_set.record_snapshot(t)
 
         # 主演化循环
         for step in range(self.steps):
-            # 1. 应用持续规则（更新速度 dv）
-            self._apply_persistent_rules(state_set, persistent_executors)
+            # P3: 自适应步长 — 根据事件逼近程度调整 dt
+            if self._adaptive is not None:
+                current_dt = self._compute_adaptive_dt(
+                    state_set, execution_plan.trigger_plan, current_dt
+                )
+
+            # 1. 应用持续规则（force accumulator 叠加所有 dv）
+            self._apply_persistent_rules(state_set, persistent_executors, current_dt)
 
             # 2. 推进位置：所有实体 pos += v * dt（与规则执行分离）
-            self._advance_positions(state_set, self.dt)
+            self._advance_positions(state_set, current_dt)
+
+            t += current_dt
+
+            # 记录每步快照
+            state_set.record_snapshot(t)
 
             # 3. 检查触发条件
             triggered = self._trigger_engine.check_triggers(
@@ -193,7 +211,7 @@ class Scheduler:
                     self._apply_local_rules(state_set, local_executors, event, step)
                 trigger_records.extend(triggered)
 
-        # 4. 组装结果
+        # 5. 组装结果
         return self._assembler.assemble(
             state_set,
             execution_plan.assembly_plan,
@@ -208,24 +226,60 @@ class Scheduler:
         self,
         state_set: StateSet,
         executors: List[tuple],
+        current_dt: Optional[float] = None,
     ) -> None:
-        """对每个实体应用所有持续规则（仅更新速度）。"""
+        """
+        对每个实体应用所有持续规则，叠加力/加速度贡献后一次性更新速度。
+
+        Force Accumulator（P2）
+        -----------------------
+        多条持续规则可能同时为同一实体产生 dv 增量（如重力 + 阻力）。
+        此方法先收集所有 dv 贡献，叠加后再统一写入 StateSet，
+        避免前一规则更新后的状态影响后续规则的计算。
+        """
+        all_entities = state_set.all_entity_ids()
+
+        # 1. 收集每个实体在本步所有规则产生的 dv 增量
+        accumulated_dv: Dict[str, List[float]] = {}
+        other_deltas: Dict[str, Dict[str, Any]] = {}
+
         for executor, applies_to, rule_inputs in executors:
-            entities = applies_to if applies_to else state_set.all_entity_ids()
+            # P3: 自适应步长 — 将当前 dt 传递给规则
+            effective_inputs = dict(rule_inputs)
+            if current_dt is not None:
+                effective_inputs["dt"] = current_dt
+
+            entities = applies_to if applies_to else all_entities
             for entity_id in entities:
                 current = state_set.get_entity_state(entity_id)
                 if current is None:
                     continue
-                delta = executor.apply(current, rule_inputs)
-                # 处理 velocity 增量（dv）
+                delta = executor.apply(current, effective_inputs)
                 dv = delta.get("dv")
                 if dv is not None:
-                    v = list(current.get("velocity", [0.0, 0.0, 0.0]))
-                    v_new = [vi + dvi for vi, dvi in zip(v, dv)]
-                    state_set.update_entity_state(entity_id, {"velocity": v_new})
+                    if entity_id not in accumulated_dv:
+                        accumulated_dv[entity_id] = [0.0, 0.0, 0.0]
+                    acc = accumulated_dv[entity_id]
+                    for i, dvi in enumerate(dv):
+                        acc[i] += dvi
                 else:
-                    # 直接合并 delta（complete state update）
-                    state_set.update_entity_state(entity_id, delta)
+                    # 非 dv 类 delta 直接合并
+                    if entity_id not in other_deltas:
+                        other_deltas[entity_id] = {}
+                    other_deltas[entity_id].update(delta)
+
+        # 2. 一次性应用叠加后的 dv
+        for entity_id, total_dv in accumulated_dv.items():
+            current = state_set.get_entity_state(entity_id)
+            if current is None:
+                continue
+            v = list(current.get("velocity", [0.0, 0.0, 0.0]))
+            v_new = [vi + dvi for vi, dvi in zip(v, total_dv)]
+            state_set.update_entity_state(entity_id, {"velocity": v_new})
+
+        # 3. 应用非 dv 类 delta
+        for entity_id, delta in other_deltas.items():
+            state_set.update_entity_state(entity_id, delta)
 
     def _advance_positions(
         self,
@@ -280,3 +334,73 @@ class Scheduler:
                 step,
                 entity_pair,
             )
+
+    # ------------------------------------------------------------------
+    # P3: 自适应步长
+    # ------------------------------------------------------------------
+
+    def _compute_adaptive_dt(
+        self,
+        state_set: StateSet,
+        trigger_plan: List[Dict[str, Any]],
+        current_dt: float,
+    ) -> float:
+        """
+        根据实体与事件区域的距离自适应调整时间步长。
+
+        逻辑
+        ----
+        - 遍历所有实体和触发条件，计算最小逼近距离
+        - 距离 < proximity_threshold → 缩小步长
+        - 距离 > proximity_threshold → 放大步长
+        - 始终限制在 [dt_min, dt_max] 范围内
+        """
+        assert self._adaptive is not None
+        cfg = self._adaptive
+
+        min_proximity = float("inf")
+
+        for condition in trigger_plan:
+            trigger_type = condition.get("type", "")
+
+            if trigger_type == "contact":
+                pairs = condition.get("pairs", [])
+                for pair in pairs:
+                    if len(pair) < 2:
+                        continue
+                    state_a = state_set.get_entity_state(pair[0])
+                    state_b = state_set.get_entity_state(pair[1])
+                    if state_a is None or state_b is None:
+                        continue
+                    pos_a = state_a.get("position", [0, 0, 0])
+                    pos_b = state_b.get("position", [0, 0, 0])
+                    dist = math.sqrt(
+                        sum((a - b) ** 2 for a, b in zip(pos_a, pos_b))
+                    )
+                    threshold = float(condition.get("threshold", 0.5))
+                    proximity = max(0.0, dist - threshold)
+                    min_proximity = min(min_proximity, proximity)
+
+            elif trigger_type == "boundary_contact":
+                axis_map = {"x": 0, "y": 1, "z": 2}
+                axis_idx = axis_map.get(condition.get("axis", "z"), 2)
+                boundary = float(condition.get("threshold", 0.0))
+                entities = condition.get("entities", state_set.all_entity_ids())
+                for eid in entities:
+                    state = state_set.get_entity_state(eid)
+                    if state is None:
+                        continue
+                    pos = state.get("position", [0, 0, 0])
+                    if len(pos) > axis_idx:
+                        proximity = abs(pos[axis_idx] - boundary)
+                        min_proximity = min(min_proximity, proximity)
+
+        # 调整步长
+        if min_proximity < cfg.proximity_threshold:
+            new_dt = current_dt * cfg.refinement_factor
+        else:
+            new_dt = current_dt * cfg.coarsening_factor
+
+        # 限制在 [dt_min, dt_max]
+        new_dt = max(cfg.dt_min, min(cfg.dt_max, new_dt))
+        return new_dt
