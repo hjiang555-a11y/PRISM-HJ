@@ -13,7 +13,7 @@ PRISM-HJ 早期以 `scenario_type`（如 `free_fall`、`projectile`、`collision
 - 事件提取的输出必须同时服务于规则提取和规则执行准备，而不只是生成一个题型标签；
 - 未来可能引入训练型提取器替换当前的规则/正则提取逻辑，接口位点必须预留。
 
-在向 state-set and rule-oriented execution core 的迁移中（详见 [`PRISM_execution_core_rearchitecture.md`](PRISM_execution_core_rearchitecture.md)），单一 scenario/solver 路径无法区分问题语义解析、能力候选表示和最终执行计划这三个本质不同的关注点。因此，引入分层表示体系成为必要的架构决策。
+在向 state-set and rule-oriented execution core 的迁移中（详见 [`PRISM_execution_core_interfaces_v0_1.md`](PRISM_execution_core_interfaces_v0_1.md)），单一 scenario/solver 路径无法区分问题语义解析、能力候选表示和最终执行计划这三个本质不同的关注点。因此，引入分层表示体系成为必要的架构决策。
 
 ---
 
@@ -237,18 +237,17 @@ Capability Representation Layer 是三层中最需要精细设计的层。其设
 
 ## 10. 与旧结构的关系
 
-| 旧结构 | 新定位 |
-|--------|--------|
-| `free_fall`、`projectile`、`collision` 模块 | 继续保留，当前定位为 **legacy / reference / testing-oriented modules**；不删除、不修改，作为历史参考和测试基准，不代表执行核心长期方向 |
-| `scenario_type` 字段 | 在 PSDL 契约中作为兼容性保留，不在新执行核心中承担路由作用 |
-| template + solver 映射 | 保留为 legacy 路径，不再代表长期执行核心本体方向 |
-| `dispatcher.py` 路由逻辑 | 近期保留，随新执行核心成熟逐步替换 |
+| 旧结构 | 当前状态 |
+|--------|----------|
+| `free_fall`、`projectile`、`collision` 模块 | **已删除**。旧 scenario/template/solver 代码已在 2026-04-06 清理中移除，不再作为代码库的一部分 |
+| `scenario_type` 字段 | 在 PSDL 契约中作为兼容性保留，不在执行核心中承担路由作用 |
+| template + solver 映射 | **已删除**。执行核心完全转向规则驱动架构 |
+| `dispatcher.py` 路由逻辑 | **已删除**。由三层表示体系（语义 → 能力 → 执行计划）取代 |
 
 ---
 
 ## 相关文档
 
-- [执行核心重构总纲](PRISM_execution_core_rearchitecture.md)
 - [新执行核心接口草案 v0.1](PRISM_execution_core_interfaces_v0_1.md)
 - [事件提取最小输出契约 v0.1](PRISM_event_extraction_minimum_contract_v0_1.md)
 - [架构总览](architecture.md)

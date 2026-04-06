@@ -1,5 +1,5 @@
 """
-End-to-end integration tests for the **new** execution pipeline.
+End-to-end integration tests for the execution pipeline.
 
 Test flow:  NL input → extract_problem_semantics → build_capability_specs →
             build_execution_plan (with admission_hints) → Scheduler.run →
@@ -29,7 +29,7 @@ from src.problem_semantic.extraction.pipeline import extract_problem_semantics
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _run_new_pipeline(question: str) -> dict:
+def _run_pipeline(question: str) -> dict:
     """
     Execute the full new pipeline for *question* and return a dict with
     ``spec``, ``plan``, ``result``, and ``state_set`` for assertion.
@@ -79,7 +79,7 @@ class TestFreeFallE2E:
     def test_free_fall_basic_chinese(self):
         """一个2kg的球从高度5米自由落体，1秒后位置和速度"""
         q = "一个2kg的球从高度5米自由落体，1秒后位置和速度？"
-        out = _run_new_pipeline(q)
+        out = _run_pipeline(q)
 
         spec = out["spec"]
         assert len(spec.entities) == 1
@@ -102,7 +102,7 @@ class TestFreeFallE2E:
     def test_free_fall_english(self):
         """A 1kg ball dropped from height 10m, after 1s."""
         q = "A 1kg ball dropped from height 10m, after 1s what is the position?"
-        out = _run_new_pipeline(q)
+        out = _run_pipeline(q)
 
         spec = out["spec"]
         assert len(spec.entities) == 1
@@ -116,7 +116,7 @@ class TestFreeFallE2E:
     def test_free_fall_different_duration(self):
         """自由落体2秒后"""
         q = "一个1kg的球从高度20米自由落体，2秒后位置？"
-        out = _run_new_pipeline(q)
+        out = _run_pipeline(q)
 
         spec = out["spec"]
         steps = spec.rule_execution_inputs.get("steps", 100)
@@ -129,7 +129,7 @@ class TestFreeFallE2E:
     def test_free_fall_semantic_hints(self):
         """Verify hints are correctly extracted and propagated."""
         q = "忽略空气阻力，一个2kg的球从高度5米自由落体"
-        out = _run_new_pipeline(q)
+        out = _run_pipeline(q)
 
         spec = out["spec"]
         assert "ignore_air_resistance" in spec.assumption_hints
@@ -150,7 +150,7 @@ class TestProjectileE2E:
     def test_projectile_basic_chinese(self):
         """水平抛出"""
         q = "水平抛出一个物体，初速度5m/s，高度10米，1秒后位置？"
-        out = _run_new_pipeline(q)
+        out = _run_pipeline(q)
 
         spec = out["spec"]
         assert len(spec.entities) == 1
@@ -169,7 +169,7 @@ class TestProjectileE2E:
     def test_projectile_english(self):
         """English projectile question."""
         q = "A ball is thrown horizontally with speed 10m/s from height 20m, after 2s."
-        out = _run_new_pipeline(q)
+        out = _run_pipeline(q)
 
         spec = out["spec"]
         assert len(spec.entities) == 1
@@ -191,7 +191,7 @@ class TestCollisionE2E:
     def test_elastic_collision_chinese(self):
         """弹性碰撞"""
         q = "一个2kg物体以3m/s速度与一个1kg静止物体发生弹性碰撞，碰后速度？"
-        out = _run_new_pipeline(q)
+        out = _run_pipeline(q)
 
         spec = out["spec"]
         assert len(spec.entities) == 2
@@ -205,7 +205,7 @@ class TestCollisionE2E:
     def test_elastic_collision_equal_mass(self):
         """Equal mass elastic collision: velocities should swap."""
         q = "一个1kg物体以2m/s速度与一个1kg静止物体发生弹性碰撞"
-        out = _run_new_pipeline(q)
+        out = _run_pipeline(q)
 
         # In equal-mass elastic collision, velocities swap:
         # v1_after = 0 m/s, v2_after = 2 m/s
@@ -217,7 +217,7 @@ class TestCollisionE2E:
     def test_collision_with_both_capabilities(self):
         """Collision scenario should admit both particle_motion and contact_interaction."""
         q = "两个物体碰撞：2kg以4m/s和1kg以0m/s，弹性碰撞后速度？"
-        out = _run_new_pipeline(q)
+        out = _run_pipeline(q)
 
         plan = out["plan"]
         # Both capabilities should be admitted for collision
@@ -235,7 +235,7 @@ class TestAdmissionHintsFiltering:
     def test_gravity_hint_enables_gravity_rule(self):
         """When gravity_present is in hints, gravity rule should be active."""
         q = "一个1kg的球从高度5米自由落体，1秒后"
-        out = _run_new_pipeline(q)
+        out = _run_pipeline(q)
 
         state = out["state_set"].get_entity_state("ball")
         # Gravity should have affected the velocity
@@ -244,7 +244,7 @@ class TestAdmissionHintsFiltering:
     def test_collision_hint_activates_collision_rule(self):
         """When collision_possible is in hints, collision rule should be active."""
         q = "1kg物体以2m/s和1kg物体以0m/s发生弹性碰撞"
-        out = _run_new_pipeline(q)
+        out = _run_pipeline(q)
 
         plan = out["plan"]
         assert "collision_possible" in plan.admission_hints.get("interaction_hints", [])
@@ -254,7 +254,7 @@ class TestAdmissionHintsFiltering:
     def test_hints_propagated_to_execution_plan(self):
         """Verify all 4 hint types propagate to ExecutionPlan."""
         q = "忽略空气阻力，一个2kg的球从高度5米自由落体，1秒后位置和速度？"
-        out = _run_new_pipeline(q)
+        out = _run_pipeline(q)
 
         hints = out["plan"].admission_hints
         assert "interaction_hints" in hints
@@ -265,7 +265,7 @@ class TestAdmissionHintsFiltering:
     def test_inelastic_collision_hint_sets_restitution(self):
         """inelastic_collision hint should set restitution to 0.0."""
         q = "两个物体发生完全非弹性碰撞：2kg以3m/s和1kg以0m/s"
-        out = _run_new_pipeline(q)
+        out = _run_pipeline(q)
 
         plan = out["plan"]
         assert "inelastic_collision" in plan.admission_hints.get("assumption_hints", [])

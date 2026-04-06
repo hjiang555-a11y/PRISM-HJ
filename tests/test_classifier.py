@@ -116,11 +116,11 @@ class TestClassifyReturnType:
 
 
 # ---------------------------------------------------------------------------
-# Integration with text_to_psdl path (smoke test — no LLM required)
+# Integration: classifier outputs feed into extraction pipeline
 # ---------------------------------------------------------------------------
 
 class TestClassifierIntegration:
-    """Verify the classifier output is compatible with scenario_type values used by dispatcher."""
+    """Verify the classifier output is compatible with extraction pipeline scenario types."""
 
     @pytest.mark.parametrize("query,expected", [
         ("自由落体运动", "free_fall"),

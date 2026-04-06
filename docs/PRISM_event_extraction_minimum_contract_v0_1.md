@@ -231,6 +231,5 @@
 ## 相关文档
 
 - [分层表示架构决议](PRISM_representation_layers_architecture_decision.md)
-- [执行核心重构总纲](PRISM_execution_core_rearchitecture.md)
 - [新执行核心接口草案 v0.1](PRISM_execution_core_interfaces_v0_1.md)
 - [架构总览](architecture.md)
