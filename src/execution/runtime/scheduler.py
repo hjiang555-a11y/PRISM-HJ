@@ -18,28 +18,15 @@ Scheduler — 执行计划驱动下的状态演化控制入口 v0.1.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional
 
 from src.execution.assembly.result_assembler import ExecutionResult, ResultAssembler
-from src.execution.rules.local.base import LocalRuleExecutor
-from src.execution.rules.local.impulsive_collision import ImpulsiveCollisionRule
-from src.execution.rules.persistent.base import PersistentRuleExecutor
-from src.execution.rules.persistent.gravity import ConstantGravityRule
+from src.execution.rules.registry import DEFAULT_RULE_REGISTRY, RuleRegistry
 from src.execution.runtime.trigger_engine import TriggerEngine
 from src.execution.state.state_set import StateSet
 from src.planning.execution_plan.models import ExecutionPlan
 
 logger = logging.getLogger(__name__)
-
-# 内置持续规则注册表（rule_name -> executor 类）
-_PERSISTENT_RULE_REGISTRY: Dict[str, Type[PersistentRuleExecutor]] = {
-    "constant_gravity": ConstantGravityRule,
-}
-
-# 内置局部规则注册表（rule_name -> executor 类）
-_LOCAL_RULE_REGISTRY: Dict[str, Type[LocalRuleExecutor]] = {
-    "impulsive_collision": ImpulsiveCollisionRule,
-}
 
 
 class Scheduler:
@@ -58,6 +45,9 @@ class Scheduler:
         最大演化步数。
     contact_threshold:
         接触触发阈值（米），传递给 TriggerEngine。
+    rule_registry:
+        规则注册表，默认使用内置的 DEFAULT_RULE_REGISTRY。
+        传入自定义注册表可在不修改核心文件的情况下扩展规则。
     """
 
     def __init__(
@@ -65,11 +55,13 @@ class Scheduler:
         dt: float = 0.01,
         steps: int = 100,
         contact_threshold: float = 0.5,
+        rule_registry: Optional[RuleRegistry] = None,
     ) -> None:
         self.dt = dt
         self.steps = steps
         self._trigger_engine = TriggerEngine(contact_threshold=contact_threshold)
         self._assembler = ResultAssembler()
+        self._registry = rule_registry if rule_registry is not None else DEFAULT_RULE_REGISTRY
 
     def run(
         self,
@@ -113,6 +105,14 @@ class Scheduler:
         interaction_hints: List[str] = hints.get("interaction_hints", [])
         assumption_hints: List[str] = hints.get("assumption_hints", [])
 
+        # 调试日志：记录 entity_model_hints 和 query_hints（调试辅助）
+        entity_model_hints: List[str] = hints.get("entity_model_hints", [])
+        query_hints: List[str] = hints.get("query_hints", [])
+        if entity_model_hints:
+            logger.debug("admission hints - entity_model_hints: %s", entity_model_hints)
+        if query_hints:
+            logger.debug("admission hints - query_hints: %s", query_hints)
+
         # 判断规则是否应被激活（hints 为空时默认全部激活以保持后向兼容）
         _has_interaction_hints = bool(interaction_hints)
         _gravity_enabled = (
@@ -132,7 +132,7 @@ class Scheduler:
                 logger.info("hints 过滤：跳过 constant_gravity（无 gravity_present hint）")
                 continue
 
-            executor_cls = _PERSISTENT_RULE_REGISTRY.get(rule_name)
+            executor_cls = self._registry.get_persistent(rule_name)
             if executor_cls is None:
                 logger.warning("未知持续规则 '%s'，已跳过", rule_name)
                 continue
@@ -153,7 +153,7 @@ class Scheduler:
                 logger.info("hints 过滤：跳过 impulsive_collision（无 collision_possible hint）")
                 continue
 
-            executor_cls = _LOCAL_RULE_REGISTRY.get(rule_name)
+            executor_cls = self._registry.get_local(rule_name)
             if executor_cls is None:
                 logger.warning("未知局部规则 '%s'，已跳过", rule_name)
                 continue

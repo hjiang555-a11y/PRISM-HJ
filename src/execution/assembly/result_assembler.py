@@ -144,12 +144,14 @@ class ResultAssembler:
         从 StateSet 中提取单个目标量。
 
         当前支持的提取策略：
-        1. plan_entry 含 ``entity`` 和 ``field`` -> 直接读取实体字段值
-        2. plan_entry 含 ``entity`` 无 ``field``  -> 返回该实体完整状态
-        3. 其他情况                              -> 尝试 query_target_state
+        1. plan_entry 含 ``entity`` 和 ``field`` 和 ``component`` -> 读取向量分量
+        2. plan_entry 含 ``entity`` 和 ``field``                  -> 读取完整字段值
+        3. plan_entry 含 ``entity`` 无 ``field``                  -> 返回完整实体状态
+        4. 其他情况                                               -> 尝试 query_target_state
         """
         entity_id: Optional[str] = plan_entry.get("entity") if isinstance(plan_entry, dict) else None
         field: Optional[str] = plan_entry.get("field") if isinstance(plan_entry, dict) else None
+        component: Optional[int] = plan_entry.get("component") if isinstance(plan_entry, dict) else None
 
         if entity_id is not None:
             entity_state = state_set.get_entity_state(entity_id)
@@ -163,6 +165,17 @@ class ResultAssembler:
                         f"target '{target_name}': field '{field}' not found "
                         f"in entity '{entity_id}'"
                     )
+                    return None
+                # 若指定分量索引，提取向量中的单一值
+                if component is not None and isinstance(value, (list, tuple)):
+                    try:
+                        return value[component]
+                    except IndexError:
+                        notes.append(
+                            f"target '{target_name}': component {component} out of range "
+                            f"for field '{field}' (len={len(value)})"
+                        )
+                        return None
                 return value
             return entity_state
 

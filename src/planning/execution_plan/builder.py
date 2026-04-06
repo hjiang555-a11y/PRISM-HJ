@@ -27,13 +27,14 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from src.capabilities.common.base import CapabilitySpec
+from src.capabilities.common.kinds import CapabilityKind
 from src.planning.execution_plan.models import ExecutionPlan
 
-# 持续规则能力名称集合（对应 persistent_rule_plan）
-_PERSISTENT_CAPABILITY_NAMES = {"particle_motion"}
+# 持续规则能力类型集合（对应 persistent_rule_plan）
+_PERSISTENT_CAPABILITY_KINDS = frozenset({CapabilityKind.PARTICLE_MOTION})
 
-# 局部规则能力名称集合（对应 local_rule_plan）
-_LOCAL_CAPABILITY_NAMES = {"contact_interaction"}
+# 局部规则能力类型集合（对应 local_rule_plan）
+_LOCAL_CAPABILITY_KINDS = frozenset({CapabilityKind.CONTACT_INTERACTION})
 
 
 def _judge_admission(spec: CapabilitySpec) -> str:
@@ -109,10 +110,15 @@ def build_execution_plan(
             )
             # unresolved capability 不进入规则计划，但仍汇聚目标量（供追溯）
             for target_name, target_desc in spec.target_mapping.items():
-                assembly_plan.setdefault(target_name, {
+                entry: Dict[str, Any] = {
                     "source_capability": spec.capability_name,
                     "description": target_desc,
-                })
+                }
+                if isinstance(target_desc, dict):
+                    for key in ("entity", "field", "component"):
+                        if key in target_desc:
+                            entry[key] = target_desc[key]
+                assembly_plan.setdefault(target_name, entry)
             unresolved.extend(spec.missing_inputs)
             continue
 
@@ -127,10 +133,15 @@ def build_execution_plan(
             )
             # deferred capability 不进入规则计划，但仍汇聚目标量（供追溯）
             for target_name, target_desc in spec.target_mapping.items():
-                assembly_plan.setdefault(target_name, {
+                entry2: Dict[str, Any] = {
                     "source_capability": spec.capability_name,
                     "description": target_desc,
-                })
+                }
+                if isinstance(target_desc, dict):
+                    for key in ("entity", "field", "component"):
+                        if key in target_desc:
+                            entry2[key] = target_desc[key]
+                assembly_plan.setdefault(target_name, entry2)
             unresolved.extend(spec.missing_inputs)
             continue
 
@@ -142,7 +153,7 @@ def build_execution_plan(
             state_set_plan.setdefault(entity_id, {"fields": ["position", "velocity", "mass"]})
 
         # 分离持续规则和局部规则
-        if spec.capability_name in _PERSISTENT_CAPABILITY_NAMES:
+        if spec.capability_name in _PERSISTENT_CAPABILITY_KINDS:
             for rule_name in spec.candidate_rules:
                 persistent_rule_plan.append({
                     "rule_name": rule_name,
@@ -150,7 +161,7 @@ def build_execution_plan(
                     "rule_execution_inputs": spec.rule_execution_inputs,
                 })
 
-        elif spec.capability_name in _LOCAL_CAPABILITY_NAMES:
+        elif spec.capability_name in _LOCAL_CAPABILITY_KINDS:
             for rule_name in spec.candidate_rules:
                 local_rule_plan.append({
                     "rule_name": rule_name,
@@ -169,12 +180,18 @@ def build_execution_plan(
                 "已跳过规则规划"
             )
 
-        # 汇聚目标量到 assembly_plan
+        # 汇聚目标量到 assembly_plan，传播 entity / field / component 字段
         for target_name, target_desc in spec.target_mapping.items():
-            assembly_plan[target_name] = {
+            entry: Dict[str, Any] = {
                 "source_capability": spec.capability_name,
                 "description": target_desc,
             }
+            # 若 target_desc 是字典（由 pipeline.py 构造），传播提取路径字段
+            if isinstance(target_desc, dict):
+                for key in ("entity", "field", "component"):
+                    if key in target_desc:
+                        entry[key] = target_desc[key]
+            assembly_plan[target_name] = entry
 
         # 汇聚未决项（执行层）
         unresolved.extend(spec.missing_inputs)

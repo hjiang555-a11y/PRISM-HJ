@@ -17,7 +17,6 @@ from typing import List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator
 
-from src.schema.exploration import ExplorationConfig
 from src.schema.units import Dimension, validate_unit_for_dimension
 
 # ---------------------------------------------------------------------------
@@ -111,17 +110,6 @@ class WorldSettings(BaseModel):
         default=["newton_second", "energy_conservation"],
         description="Physical theorems to be honoured by the simulation",
     )
-    exploration_config: Optional[ExplorationConfig] = Field(
-        default=None,
-        description=(
-            "探索模式配置（最小结构化 schema）。"
-            "当该字段不为空时，表示场景携带了参数空间探索意图，"
-            "可由 --explore 开关激活。"
-            "当前仅做结构校验，不执行真实探索算法，不影响确定性模拟主路径。"
-            "字段类型已从裸 dict 升级为 ExplorationConfig，"
-            "包含 parameters / combine_method / interestingness 等最小子字段。"
-        ),
-    )
 
     @field_validator("gravity")
     @classmethod
@@ -132,13 +120,10 @@ class WorldSettings(BaseModel):
 
     def pretty_print(self) -> str:
         """Return a human-readable summary of world settings."""
-        explore_hint = (
-            ", exploration_config=<set>" if self.exploration_config is not None else ""
-        )
         return (
             f"WorldSettings(gravity={self.gravity}, dt={self.dt}s, "
             f"steps={self.steps}, boundary={self.space.boundary_type}, "
-            f"ground_plane={self.ground_plane}{explore_hint})"
+            f"ground_plane={self.ground_plane})"
         )
 
 

@@ -1,7 +1,7 @@
 """
-ImpulsiveCollisionRule — 瞬时碰撞局部规则 v0.1.
+ImpulsiveCollisionRule — 瞬时碰撞局部规则 v0.2.
 
-第一原型局部规则：在接触触发时，对两个粒子执行一维弹性或非弹性碰撞。
+第一原型局部规则：在接触触发时，对两个或更多粒子执行一维弹性或非弹性碰撞。
 
 规则逻辑
 --------
@@ -12,6 +12,12 @@ ImpulsiveCollisionRule — 瞬时碰撞局部规则 v0.1.
 
 其中 e 为恢复系数（e=1 弹性碰撞，e=0 完全非弹性碰撞）。
 当前只处理沿碰撞法线方向（默认 z 轴）的速度分量，其余方向不变。
+
+多体碰撞（N > 2）
+-----------------
+当 entity_pair 包含超过两个实体时，对所有两两组合依次施加冲量：
+每对实体满足接触条件时开启新处理支路，结果依次叠加（串行结算）。
+这与"原则上多少个体都一样处理"的设计一致，无需线程。
 
 required_inputs
 ---------------
@@ -82,12 +88,15 @@ class ImpulsiveCollisionRule(LocalRuleExecutor):
         """
         执行冲量碰撞，返回碰后状态。
 
+        支持两体（标准情形）和多体（N > 2）碰撞。多体时对所有两两组合
+        依次施加冲量（串行结算，无线程）。
+
         Parameters
         ----------
         pre_trigger_state:
             触发前状态字典，键为实体 ID，值含 ``mass`` 和 ``velocity``。
         inputs:
-            须含 ``entity_pair`` (两实体 ID)、``restitution``、
+            须含 ``entity_pair`` (两个或更多实体 ID)、``restitution``、
             ``contact_normal``。
 
         Returns
@@ -100,34 +109,39 @@ class ImpulsiveCollisionRule(LocalRuleExecutor):
         if len(pair) < 2:
             return dict(pre_trigger_state)
 
-        id_a, id_b = pair[0], pair[1]
-        state_a = pre_trigger_state[id_a]
-        state_b = pre_trigger_state[id_b]
-
-        m1: float = float(state_a["mass"])
-        m2: float = float(state_b["mass"])
-        v1: List[float] = list(state_a["velocity"])
-        v2: List[float] = list(state_b["velocity"])
         e: float = float(inputs.get("restitution", 1.0))
         n: List[float] = list(inputs.get("contact_normal", _DEFAULT_NORMAL))
 
-        # 相对速度在法线方向的投影
-        v_rel_n = _dot(_sub(v1, v2), n)
-
-        # 若两粒子已在分离或无相对速度（v_rel_n <= 0），不施加冲量
-        # v_rel_n == 0 表示无相对法线速度，无需碰撞冲量
-        # v_rel_n < 0 表示两粒子已在相互远离
-        if v_rel_n <= 0:
-            return dict(pre_trigger_state)
-
-        # 冲量大小 j = -(1+e) * v_rel_n / (1/m1 + 1/m2)
-        j = (1.0 + e) * v_rel_n / (1.0 / m1 + 1.0 / m2)
-
-        # 更新速度
-        v1_after = _sub(v1, _scale(j / m1, n))
-        v2_after = _add(v2, _scale(j / m2, n))
-
+        # 以当前状态副本为起点，依次处理所有两两组合（N-body 串行结算）
         updated = {k: dict(v) for k, v in pre_trigger_state.items()}
-        updated[id_a]["velocity"] = v1_after
-        updated[id_b]["velocity"] = v2_after
+
+        for i in range(len(pair)):
+            for j in range(i + 1, len(pair)):
+                id_a, id_b = pair[i], pair[j]
+                state_a = updated.get(id_a)
+                state_b = updated.get(id_b)
+                if state_a is None or state_b is None:
+                    continue
+
+                m1: float = float(state_a["mass"])
+                m2: float = float(state_b["mass"])
+                v1: List[float] = list(state_a["velocity"])
+                v2: List[float] = list(state_b["velocity"])
+
+                # 相对速度在法线方向的投影
+                v_rel_n = _dot(_sub(v1, v2), n)
+
+                # 若两粒子已在分离或无相对速度（v_rel_n <= 0），不施加冲量
+                if v_rel_n <= 0:
+                    continue
+
+                # 冲量大小 j = -(1+e) * v_rel_n / (1/m1 + 1/m2)
+                j = (1.0 + e) * v_rel_n / (1.0 / m1 + 1.0 / m2)
+
+                v1_after = _sub(v1, _scale(j / m1, n))
+                v2_after = _add(v2, _scale(j / m2, n))
+
+                updated[id_a]["velocity"] = v1_after
+                updated[id_b]["velocity"] = v2_after
+
         return updated
