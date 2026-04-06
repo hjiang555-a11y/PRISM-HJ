@@ -36,7 +36,7 @@ Problem Semantic Layer（问题语义解析，生成 ProblemSemanticSpec）
         ↓
 Capability Representation Layer（能力候选识别，生成 CapabilitySpec per capability family）
         ↓
-Execution Plan Layer（执行计划编排，生成 EvolutionScheduleConfig + AssemblyRequest）
+Execution Plan Layer（执行计划编排，生成 ExecutionPlan，驱动 Evolution Scheduling 与 Result Assembly）
         ↓
 规则驱动演化 + Result Assembly
 ```
@@ -91,7 +91,7 @@ Execution Plan Layer（执行计划编排，生成 EvolutionScheduleConfig + Ass
 
 **负责**：
 - 接收来自 Capability Representation Layer 的输出；
-- 将各 CapabilitySpec 整合为统一的 `EvolutionScheduleConfig`；
+- 将各 CapabilitySpec 整合为统一的 `ExecutionPlan`；
 - 处理耦合能力的联合执行安排（强耦合）或分别计划与结果汇总（弱耦合）；
 - 生成 `AssemblyRequest`，明确结果汇总的目标量；
 - 为 Evolution Scheduling 提供可直接执行的配置。
@@ -101,7 +101,7 @@ Execution Plan Layer（执行计划编排，生成 EvolutionScheduleConfig + Ass
 - 修改 CapabilitySpec 的内容；
 - 承担 rule extraction 的决策逻辑。
 
-**主要产出**：`EvolutionScheduleConfig` + `AssemblyRequest`（接口详见 [`PRISM_execution_core_interfaces_v0_1.md`](PRISM_execution_core_interfaces_v0_1.md)）
+**主要产出**：`ExecutionPlan`（当前为架构级规划对象；对应下游 Evolution Scheduling 配置与 `AssemblyRequest`，接口详见 [`PRISM_execution_core_interfaces_v0_1.md`](PRISM_execution_core_interfaces_v0_1.md)）
 
 ---
 
@@ -174,7 +174,7 @@ Capability Representation Layer 是三层中最需要精细设计的层。其设
 - **允许不同能力族使用不同中层表示格式**：能力族之间的表示差异是合理的，反映了物理规律本身的异构性。
 - **顶层语义尽量统一**：Problem Semantic Layer 的输出格式（`ProblemSemanticSpec`）在所有场景下保持一致，提供统一的语义接口。
 - **中层按能力分化**：Capability Representation Layer 允许不同能力族的 `CapabilitySpec` 按需定制，但须遵守第 4.2 节中的最小公共骨架约束。
-- **底层执行再收敛**：Execution Plan Layer 负责将各 CapabilitySpec 整合为统一的 `EvolutionScheduleConfig`，实现底层执行逻辑的收敛。
+- **底层执行再收敛**：Execution Plan Layer 负责将各 CapabilitySpec 整合为统一的 `ExecutionPlan`，实现底层执行逻辑的收敛。
 
 ---
 
@@ -239,12 +239,10 @@ Capability Representation Layer 是三层中最需要精细设计的层。其设
 
 | 旧结构 | 新定位 |
 |--------|--------|
-| `free_fall`、`projectile`、`collision` 模块 | 继续保留，当前定位为 **legacy / reference / testing-oriented modules** |
+| `free_fall`、`projectile`、`collision` 模块 | 继续保留，当前定位为 **legacy / reference / testing-oriented modules**；不删除、不修改，作为历史参考和测试基准，不代表执行核心长期方向 |
 | `scenario_type` 字段 | 在 PSDL 契约中作为兼容性保留，不在新执行核心中承担路由作用 |
 | template + solver 映射 | 保留为 legacy 路径，不再代表长期执行核心本体方向 |
 | `dispatcher.py` 路由逻辑 | 近期保留，随新执行核心成熟逐步替换 |
-
-现有 `free_fall`、`projectile`、`collision` 模块**不删除、不修改**。它们作为历史参考和测试基准，在新执行核心成熟前继续提供可验证的基准结果。
 
 ---
 

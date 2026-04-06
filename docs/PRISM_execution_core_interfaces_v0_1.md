@@ -114,7 +114,9 @@
 
 **职责**：执行核心的控制中心，负责整个状态集演化过程的调度与推进。
 
-`EvolutionScheduleConfig` 指定调度参数；调度器在运行时执行以下职责：
+`EvolutionScheduleConfig` 是 Evolution Scheduling 阶段的调度参数配置对象，指定调度运行时所需的配置。请注意：`EvolutionScheduleConfig` 是执行层面的具体调度参数对象，而非 Execution Plan Layer 的规划对象——后者为 `ExecutionPlan`（架构级规划对象，详见 [`PRISM_representation_layers_architecture_decision.md`](PRISM_representation_layers_architecture_decision.md)）；`ExecutionPlan` 编排完成后驱动本调度配置。
+
+调度器在运行时执行以下职责：
 
 - **初始化 active rule set**：将所有 persistent rules 加入 active rule set
 - **维护 persistent rules**：persistent rules 在整个演化过程中始终处于激活状态
