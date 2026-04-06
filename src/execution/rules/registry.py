@@ -31,6 +31,7 @@ from typing import Dict, Optional, Type
 from src.execution.rules.local.base import LocalRuleExecutor
 from src.execution.rules.local.impulsive_collision import ImpulsiveCollisionRule
 from src.execution.rules.persistent.base import PersistentRuleExecutor
+from src.execution.rules.persistent.drag import LinearDragRule
 from src.execution.rules.persistent.gravity import ConstantGravityRule
 
 
@@ -109,4 +110,5 @@ class RuleRegistry:
 
 DEFAULT_RULE_REGISTRY = RuleRegistry()
 DEFAULT_RULE_REGISTRY.register_persistent("constant_gravity", ConstantGravityRule)
+DEFAULT_RULE_REGISTRY.register_persistent("linear_drag", LinearDragRule)
 DEFAULT_RULE_REGISTRY.register_local("impulsive_collision", ImpulsiveCollisionRule)
