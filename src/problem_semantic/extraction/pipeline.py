@@ -28,6 +28,9 @@ from src.problem_semantic.models import ProblemSemanticSpec
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_GRAVITY: list[float] = [0, 0, -9.8]
+_DEFAULT_DT: float = 0.01
+
 
 # ---------------------------------------------------------------------------
 # Admission hints 提取：轻量规则法（regex / keyword pattern matching）
@@ -236,9 +239,9 @@ def _enrich_from_extractors(spec: ProblemSemanticSpec) -> ProblemSemanticSpec:
 
         spec.rule_execution_inputs = {
             "scenario_type": "free_fall",
-            "gravity_vector": [0, 0, -9.8],
-            "dt": 0.01,
-            "steps": round(dur / 0.01),
+            "gravity_vector": list(_DEFAULT_GRAVITY),
+            "dt": _DEFAULT_DT,
+            "steps": round(dur / _DEFAULT_DT),
         }
 
         spec.candidate_capabilities = ["particle_motion"]
@@ -282,9 +285,9 @@ def _enrich_from_extractors(spec: ProblemSemanticSpec) -> ProblemSemanticSpec:
 
         spec.rule_execution_inputs = {
             "scenario_type": "projectile",
-            "gravity_vector": [0, 0, -9.8],
-            "dt": 0.01,
-            "steps": round(dur / 0.01),
+            "gravity_vector": list(_DEFAULT_GRAVITY),
+            "dt": _DEFAULT_DT,
+            "steps": round(dur / _DEFAULT_DT),
         }
 
         spec.candidate_capabilities = ["particle_motion"]
@@ -332,7 +335,7 @@ def _enrich_from_extractors(spec: ProblemSemanticSpec) -> ProblemSemanticSpec:
             "scenario_type": "collision",
             "restitution": 1.0 if ctype == "elastic" else 0.0,
             "contact_normal": [1, 0, 0],
-            "dt": 0.01,
+            "dt": _DEFAULT_DT,
             "steps": 100,
         }
 
