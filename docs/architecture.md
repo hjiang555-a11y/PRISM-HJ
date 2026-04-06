@@ -16,7 +16,6 @@ PRISM-HJ（Physical Reasoning & Inference System for Mechanics — HJ）采用**
 > 现有 `free_fall`、`projectile`、`collision` 模块定位为 legacy / reference / testing-oriented modules，不代表执行核心长期方向。
 >
 > 详见：
-> - [执行核心重构总纲](PRISM_execution_core_rearchitecture.md)
 > - [新执行核心接口草案 v0.1](PRISM_execution_core_interfaces_v0_1.md)
 > - [分层表示架构决议（草案）](PRISM_representation_layers_architecture_decision.md)
 > - [事件提取最小输出契约 v0.1](PRISM_event_extraction_minimum_contract_v0_1.md)
@@ -37,7 +36,7 @@ PRISM-HJ（Physical Reasoning & Inference System for Mechanics — HJ）采用**
 │  职责：结构化知识契约；量纲/单位强制验证              │
 ├─────────────────────────────────────────────────────┤
 │          第三层：知识编译层 (Knowledge Compiler)      │
-│  src/physics/dispatcher.py  ·  src/templates/       │
+│  src/physics/dispatcher.py  ·  src/physics/templates/  │
 │  职责：场景分类 → 选择求解器；模板填充                │
 ├─────────────────────────────────────────────────────┤
 │          第四层：确定性执行层 (Deterministic Engine)  │
@@ -102,9 +101,9 @@ PRISM-HJ（Physical Reasoning & Inference System for Mechanics — HJ）采用**
 
 ## 第三层：知识编译层
 
-**模块**：`src/physics/dispatcher.py`，`src/templates/`
+**模块**：`src/physics/dispatcher.py`，`src/physics/templates/`
 
-补充说明：`src/explorer/` 是预留中的实验性 orchestration lane，用于未来的探索模式扩展；它不属于物理执行核心，也不会进入默认确定性执行链。`WorldSettings.exploration_config` 已从裸 `Optional[dict]` 升级为最小结构化模型 `ExplorationConfig`（定义于 `src/schema/exploration.py`），包含 `parameters`、`combine_method`、`interestingness` 等字段，支持加载时结构校验，但不执行任何探索算法。
+`WorldSettings.exploration_config` 使用最小结构化模型 `ExplorationConfig`（定义于 `src/schema/exploration.py`），包含 `parameters`、`combine_method`、`interestingness` 等字段，支持加载时结构校验，但不执行任何探索算法。
 
 **职责**：
 - `dispatch(psdl) -> List[Dict]`：根据 `scenario_type` 路由到对应求解器
@@ -112,7 +111,7 @@ PRISM-HJ（Physical Reasoning & Inference System for Mechanics — HJ）采用**
   - `free_fall` → `analytic.solve_free_fall()`
   - 其他/未知 → `engine.simulate_psdl()`（PyBullet 数值求解）
 
-**模板基础设施**（`src/templates/`）：
+**模板基础设施**（`src/physics/templates/`）：
 - `free_fall.build_psdl(...)` — 从物理参数直接生成符合 PSDL v0.1 的文档，
   包含正确的 `assumptions`、`validation_targets` 和 `source_refs`
 
