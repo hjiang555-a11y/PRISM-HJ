@@ -5,16 +5,15 @@
 PRISM-HJ（Physical Reasoning & Inference System for Mechanics — HJ）采用**四层架构**，
 将"自然语言"与"确定性物理执行"完全解耦，使每一层都可独立测试、替换和审计。
 
-> **架构演进说明**：项目正在从 scenario/solver-centered 架构向 state-set and rule-oriented execution core 转型。
-> 在此基础上，进一步引入**三层表示体系**（架构级规划对象，尚非稳定代码实现）：
+> **架构演进说明**：项目正在从 scenario/solver-centered 架构转向 state-set and rule-oriented execution core，并在此基础上引入**三层表示体系**。以下三层均为架构级规划对象，尚非稳定代码实现：
 >
-> - **问题语义层（Problem Semantic Layer）**：解析问题输入，提取实体、关心目标（`targets_of_interest`）、显式条件，以及 `rule_extraction_inputs` 和 `rule_execution_inputs`；对应规划对象 `ProblemSemanticSpec`
-> - **能力表示层（Capability Representation Layer）**：针对候选能力族生成各自的能力表示，包含 `rule_extraction_inputs` 和 `rule_execution_inputs`；对应规划对象 `CapabilitySpec`
-> - **执行计划层（Execution Plan Layer）**：将各能力表示整合为统一的 `ExecutionPlan`，驱动规则驱动演化与 Result Assembly
+> - **Problem Semantic Layer（问题语义层）**：解析问题输入，提取实体、关心目标（`targets_of_interest`）、显式条件及事件信息，输出 `rule_extraction_inputs` 与 `rule_execution_inputs`；对应规划对象 `ProblemSemanticSpec`。
+> - **Capability Representation Layer（能力表示层）**：针对候选能力族生成能力表示，显式携带 `rule_extraction_inputs` 与 `rule_execution_inputs`；对应规划对象 `CapabilitySpec`。
+> - **Execution Plan Layer（执行计划层）**：将各能力表示整合为统一执行计划，驱动规则驱动演化与 Result Assembly；对应规划对象 `ExecutionPlan`。
 >
-> 当前文档重点：事件提取路径（事件如何表示、`rule_extraction_inputs` 和 `rule_execution_inputs` 如何准备）是现阶段最核心的主线。跨领域扩展能力作为未来可扩展方向保留，不是当前优先矛盾。
+> **现阶段核心主线**：事件提取路径——事件如何表示、`rule_extraction_inputs` 与 `rule_execution_inputs` 如何准备——是当前最小闭环的关键路径。跨领域扩展（cross-domain rule composition）仅作为未来方向保留。
 >
-> 现有 `free_fall`、`projectile`、`collision` 模块保留，当前定位为 legacy / reference / testing-oriented modules，不代表执行核心长期方向。
+> 现有 `free_fall`、`projectile`、`collision` 模块定位为 legacy / reference / testing-oriented modules，不代表执行核心长期方向。
 >
 > 详见：
 > - [执行核心重构总纲](PRISM_execution_core_rearchitecture.md)

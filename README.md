@@ -27,19 +27,15 @@
 
 ### 三层表示体系
 
-在 state-set / rule-oriented execution core 的基础上，项目进一步采用三层表示体系（以下均为架构级规划对象，尚非稳定代码实现）：
+项目在 state-set / rule-oriented execution core 基础上引入三层表示体系，作为架构级规划对象（尚非稳定代码实现）：
 
-- **Problem Semantic Layer（问题语义层）**：解析输入，提取实体、关心目标（`targets_of_interest`）、显式条件，以及 `rule_extraction_inputs` 和 `rule_execution_inputs`。对应规划对象 `ProblemSemanticSpec`。
-- **Capability Representation Layer（能力表示层）**：针对候选能力族生成各自的能力表示（`CapabilitySpec`），显式携带 `rule_extraction_inputs` 和 `rule_execution_inputs`。
-- **Execution Plan Layer（执行计划层）**：将各能力表示整合为统一的 `ExecutionPlan`，驱动规则驱动演化与 Result Assembly。
+- **Problem Semantic Layer（问题语义层）**：解析输入，提取实体、关心目标（`targets_of_interest`）、显式条件及事件信息，输出 `rule_extraction_inputs` 与 `rule_execution_inputs`；对应规划对象 `ProblemSemanticSpec`。
+- **Capability Representation Layer（能力表示层）**：针对候选能力族生成能力表示（`CapabilitySpec`），显式携带 `rule_extraction_inputs` 与 `rule_execution_inputs`。
+- **Execution Plan Layer（执行计划层）**：将各能力表示整合为统一执行计划（`ExecutionPlan`），驱动规则驱动演化与 Result Assembly。
 
-**当前阶段重点**：事件提取（Event Extraction）的输出不只是文本结构化，还要显式服务于两类关键信息准备：
-- **`rule_extraction_inputs`**：规则提取阶段判断应激活哪些 primitive rules 的依据
-- **`rule_execution_inputs`**：规则执行阶段 primitive rules 计算所需的数值输入
+**当前阶段重点**：事件提取（Event Extraction）的输出不只是文本结构化——它必须显式准备 `rule_extraction_inputs`（规则激活依据）与 `rule_execution_inputs`（规则计算输入），构成最小闭环主线。跨领域扩展（cross-domain rule composition）作为未来可扩展方向保留。
 
-跨领域扩展（cross-domain rule composition）作为未来可扩展方向保留，不是当前优先矛盾。
-
-现有的 `free_fall`、`projectile`、`collision` 模块**仍然保留**，当前定位为 **legacy / reference / testing-oriented modules**，不代表执行核心的长期方向。
+现有 `free_fall`、`projectile`、`collision` 模块定位为 legacy / reference / testing-oriented modules，不代表执行核心长期方向。
 
 详细说明见：
 - [`docs/PRISM_execution_core_rearchitecture.md`](docs/PRISM_execution_core_rearchitecture.md)（执行核心重构总纲）
