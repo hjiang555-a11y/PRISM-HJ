@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import re
 
-from src.problem_semantic.models import ProblemSemanticSpec
+from src.problem_semantic.models import InputAvailabilityHints, ProblemSemanticSpec
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +166,139 @@ def _extract_query_hints(text: str) -> list[str]:
     return hints
 
 
+def _extract_input_availability_hints(text: str) -> InputAvailabilityHints:
+    """
+    从文本中推断关键物理量是否已知（输入可得性）。
+
+    本函数不依赖具体数值，而是基于文本中的"量纲词 + 数值暗示"推断
+    各物理量类别是否可得，为 mapper 的 A 层 admission 判断提供结构化来源。
+
+    推断策略
+    --------
+    - ``text_explicit``：文本中出现量纲词紧跟数值表达式，认为该量明确已知。
+    - ``text_inferred``：文本中出现量纲词但无明显数值，认为该量可能可得。
+    - ``default``：未检测到相关量纲词，默认不可得（False）。
+
+    Parameters
+    ----------
+    text:
+        原始输入文本。
+
+    Returns
+    -------
+    InputAvailabilityHints
+        填充了各物理量可得性标志和来源标记的对象。
+    """
+    lower = text.lower()
+    sources: dict = {}
+
+    # --- 初始位置 ---
+    # 明确给出数值：高度/位置/坐标 + 数字
+    _pos_explicit = re.search(
+        r"(?:高度|height|位置|position|初始位置|initial\s*position"
+        r"|x\s*=|y\s*=|z\s*=|h\s*=|x0\s*=|y0\s*=|z0\s*=)"
+        r"\s*\d+(?:\.\d+)?",
+        lower,
+    )
+    # 暗示有位置（如"从10米高处"）
+    _pos_inferred = re.search(
+        r"\d+(?:\.\d+)?\s*(?:米|m|cm|mm)\s*(?:高|处|above|height)"
+        r"|from\s+(?:a\s+)?height\s+of\s+\d+"
+        r"|drops?\s+from\s+\d+"
+        r"|height\s+of\s+\d+",
+        lower,
+    )
+    if _pos_explicit:
+        initial_position_known = True
+        sources["initial_position_known"] = "text_explicit"
+    elif _pos_inferred:
+        initial_position_known = True
+        sources["initial_position_known"] = "text_inferred"
+    else:
+        initial_position_known = False
+        sources["initial_position_known"] = "default"
+
+    # --- 初始速度 ---
+    # 明确给出数值：速度词 + 数字
+    _vel_explicit = re.search(
+        r"(?:初速度|初始速度|initial\s*velocity|initial\s*speed|v0|v_0"
+        r"|以\s*\d+|speed\s*=|velocity\s*=|v\s*=)"
+        r"\s*\d+(?:\.\d+)?",
+        lower,
+    )
+    # 暗示有速度（如"以水平速度10 m/s抛出"、"以v0=..."等）
+    _vel_inferred = re.search(
+        r"\d+(?:\.\d+)?\s*(?:m/s|km/h|m·s|米每秒|km/h)\b"
+        r"|以\s*\d+(?:\.\d+)?\s*(?:m/s|米每秒)"
+        r"|horizontally\s+at\s+\d+"
+        r"|thrown\s+with\s+(?:a\s+)?(?:speed|velocity)\s+of\s+\d+",
+        lower,
+    )
+    if _vel_explicit:
+        initial_velocity_known = True
+        sources["initial_velocity_known"] = "text_explicit"
+    elif _vel_inferred:
+        initial_velocity_known = True
+        sources["initial_velocity_known"] = "text_inferred"
+    else:
+        initial_velocity_known = False
+        sources["initial_velocity_known"] = "default"
+
+    # --- 质量 ---
+    # 明确给出数值：质量词 + 数字
+    _mass_explicit = re.search(
+        r"(?:质量|mass|重量|weight|m\s*=|mass\s*=)"
+        r"\s*\d+(?:\.\d+)?\s*(?:kg|g|千克|公斤|克)?",
+        lower,
+    )
+    # 暗示有质量（如"一个5kg的物体"、"2kg的小球"）
+    _mass_inferred = re.search(
+        r"\d+(?:\.\d+)?\s*(?:kg|千克|公斤)"
+        r"|\d+(?:\.\d+)?\s*g\s",
+        lower,
+    )
+    if _mass_explicit:
+        mass_known = True
+        sources["mass_known"] = "text_explicit"
+    elif _mass_inferred:
+        mass_known = True
+        sources["mass_known"] = "text_inferred"
+    else:
+        mass_known = False
+        sources["mass_known"] = "default"
+
+    # --- 碰前速度（接触交互场景） ---
+    # 明确给出碰前速度数值
+    _pre_vel_explicit = re.search(
+        r"(?:碰前|碰撞前|before\s*(?:the\s*)?collision|pre[\s-]*collision"
+        r"|v_before|v1|v2|以\s*\d+(?:\.\d+)?\s*(?:m/s|米每秒).*碰)"
+        r"\s*\d*",
+        lower,
+    )
+    # 如果文本中出现碰撞场景且有速度数值，视为碰前速度可得
+    _is_collision_scenario = re.search(
+        r"碰撞|collision|collide|impact|弹性碰|非弹性", lower
+    )
+    _has_speed_value = re.search(r"\d+(?:\.\d+)?\s*(?:m/s|km/h|米每秒)", lower)
+    if _pre_vel_explicit:
+        pre_collision_velocity_known = True
+        sources["pre_collision_velocity_known"] = "text_explicit"
+    elif _is_collision_scenario and _has_speed_value:
+        pre_collision_velocity_known = True
+        sources["pre_collision_velocity_known"] = "text_inferred"
+    else:
+        pre_collision_velocity_known = False
+        sources["pre_collision_velocity_known"] = "default"
+
+    return InputAvailabilityHints(
+        initial_position_known=initial_position_known,
+        initial_velocity_known=initial_velocity_known,
+        mass_known=mass_known,
+        pre_collision_velocity_known=pre_collision_velocity_known,
+        sources=sources,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Public pipeline entry point
 # ---------------------------------------------------------------------------
@@ -195,6 +328,7 @@ def extract_problem_semantics(input_text: str) -> ProblemSemanticSpec:
     interaction_hints = _extract_interaction_hints(input_text)
     assumption_hints = _extract_assumption_hints(input_text)
     query_hints = _extract_query_hints(input_text)
+    input_availability_hints = _extract_input_availability_hints(input_text)
 
     return ProblemSemanticSpec(
         source_input=input_text,
@@ -217,4 +351,5 @@ def extract_problem_semantics(input_text: str) -> ProblemSemanticSpec:
         interaction_hints=interaction_hints,
         assumption_hints=assumption_hints,
         query_hints=query_hints,
+        input_availability_hints=input_availability_hints,
     )

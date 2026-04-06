@@ -37,6 +37,23 @@
 
 现有 `free_fall`、`projectile`、`collision` 模块定位为 legacy / reference / testing-oriented modules，不代表执行核心长期方向。
 
+### Capability Admission 闭环（已落地）
+
+Capability Admission 机制已完整落地，核心组件包括：
+
+**已完成（稳定代码）**：
+- **`ProblemSemanticSpec` 四类 admission hints**（`entity_model_hints`、`interaction_hints`、`assumption_hints`、`query_hints`）：由 extraction pipeline 从问题文本中轻量提取，为 mapper 提供结构化语义来源。
+- **`InputAvailabilityHints` 结构化输入可得性**：新增问题级结构，表达初始位置、初始速度、质量、碰前速度是否可得，作为 mapper A 层 admission 判断的来源（取代纯关键词匹配）。
+- **Mapper 三层优先级（A/B/C）信息消费**：`particle_motion` 和 `contact_interaction` mapper 均明确按 A（语义 hints）→ B（explicit_conditions 关键词）→ C（fallback 默认值）顺序消费信息。
+- **`ApplicabilityEvalItem` 动态评估**：`applicability_conditions` 从静态文本列表扩展为包含动态评估结果（`applicability_eval`），每条评估项含 `status`（satisfied / uncertain / unsupported）和 `source`（追溯评估依据）。
+- **`ValidityWarning` 轻量 warning 机制**：当问题文本中出现可能违反 `validity_limits` 的信号时，mapper 生成结构化警告，不改变 admission 三态，可被测试断言。
+- **ExecutionPlan 三态（admitted / deferred / unresolved）**：已稳定落地。
+- **deferred 重入骨架**：`deferred_capabilities` 条目新增 `reentry_hints` 结构化补充建议，`build_reentry_context()` 提供可调用的重入接口。
+
+**测试覆盖**：530 个测试（原始 479 + 51 个 admission 闭环增强测试）全部通过。
+
+详细设计见：[`docs/PRISM_capability_admission_conditions_and_entry_inputs_v0_1.md`](docs/PRISM_capability_admission_conditions_and_entry_inputs_v0_1.md)（第十节：Admission 闭环增强）
+
 详细说明见：
 - [`docs/PRISM_execution_core_rearchitecture.md`](docs/PRISM_execution_core_rearchitecture.md)（执行核心重构总纲）
 - [`docs/PRISM_execution_core_interfaces_v0_1.md`](docs/PRISM_execution_core_interfaces_v0_1.md)（新执行核心接口草案 v0.1）

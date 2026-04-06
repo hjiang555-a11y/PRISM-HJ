@@ -33,6 +33,7 @@ C. 原型阶段 fallback 默认值
 
 from __future__ import annotations
 
+from src.capabilities.common.base import ApplicabilityEvalItem, ValidityWarning
 from src.capabilities.particle_motion.spec import ParticleMotionCapabilitySpec
 from src.problem_semantic.models import ProblemSemanticSpec
 
@@ -102,8 +103,12 @@ def build_particle_motion_spec(
     missing_entry: list = []
 
     # --- 初始位置 ---
-    # A. 语义层：如有实体初始状态要求则认为已知
-    _has_position_from_semantics = bool(initial_state_requirements)
+    # A. 语义层：来自 input_availability_hints（结构化输入可得性，admission 闭环增强）；
+    #    兼容旧逻辑：如有实体初始状态要求亦视为已知
+    _has_position_from_semantics = (
+        problem_spec.input_availability_hints.initial_position_known
+        or bool(initial_state_requirements)
+    )
     # B. 显式条件关键词
     _position_keywords = {"position", "height", "x", "y", "z", "initial_position", "x0", "y0", "z0"}
     _has_position_from_conditions = bool(_position_keywords & condition_names)
@@ -112,8 +117,8 @@ def build_particle_motion_spec(
         missing_entry.append("initial_position_per_entity")
 
     # --- 初始速度 ---
-    # A. 语义层：当前语义层尚无直接"速度已知"的结构化 hint，留待后续扩展
-    _has_velocity_from_semantics = False
+    # A. 语义层：来自 input_availability_hints（结构化输入可得性，admission 闭环增强）
+    _has_velocity_from_semantics = problem_spec.input_availability_hints.initial_velocity_known
     # B. 显式条件关键词
     _velocity_keywords = {"velocity", "speed", "v", "vx", "vy", "vz", "initial_velocity", "v0", "v0x", "v0y"}
     _has_velocity_from_conditions = bool(_velocity_keywords & condition_names)
@@ -122,8 +127,8 @@ def build_particle_motion_spec(
         missing_entry.append("initial_velocity_per_entity")
 
     # --- 质量 ---
-    # A. 语义层：当前无直接质量 hint（质量信息主要来自数值条件）
-    _has_mass_from_semantics = False
+    # A. 语义层：来自 input_availability_hints（结构化输入可得性，admission 闭环增强）
+    _has_mass_from_semantics = problem_spec.input_availability_hints.mass_known
     # B. 显式条件关键词
     _mass_keywords = {"mass", "m", "mass_kg", "weight"}
     _has_mass_from_conditions = bool(_mass_keywords & condition_names)
@@ -140,7 +145,99 @@ def build_particle_motion_spec(
         "实体可以建模为质点（无旋转、无形变）",
         "背景作用在实体运动的时空范围内连续且空间均匀",
         "实体状态演化可用连续时间微分方程描述",
+        "不存在可能中断连续状态演化的局部触发事件",
     ]
+
+    # ------------------------------------------------------------------
+    # applicability_eval：结构化动态评估（Goal 2）
+    # 对每条 applicability_conditions 进行动态评估，输出带 status 的结构
+    # ------------------------------------------------------------------
+
+    applicability_eval: list = []
+
+    # 条件 1：实体是否可视为质点
+    _has_rigid_body_hint = "rigid_body" in problem_spec.entity_model_hints
+    _has_point_mass_hint = "point_mass" in problem_spec.entity_model_hints
+    if _has_rigid_body_hint:
+        applicability_eval.append(ApplicabilityEvalItem(
+            condition_key="point_mass_applicable",
+            description="实体可以建模为质点（无旋转、无形变）",
+            status="unsupported",
+            source="entity_model_hints",
+            notes="entity_model_hints 包含 'rigid_body'，质点近似不适用",
+        ))
+    elif _has_point_mass_hint:
+        applicability_eval.append(ApplicabilityEvalItem(
+            condition_key="point_mass_applicable",
+            description="实体可以建模为质点（无旋转、无形变）",
+            status="satisfied",
+            source="entity_model_hints",
+            notes="entity_model_hints 包含 'point_mass'",
+        ))
+    else:
+        applicability_eval.append(ApplicabilityEvalItem(
+            condition_key="point_mass_applicable",
+            description="实体可以建模为质点（无旋转、无形变）",
+            status="uncertain",
+            source="default",
+            notes="未检测到明确实体建模 hint，默认质点近似但不确定",
+        ))
+
+    # 条件 2：是否存在持续背景作用
+    _has_field_hint = "field_present" in problem_spec.interaction_hints
+    _has_gravity_hint = "gravity_present" in problem_spec.interaction_hints
+    if _has_field_hint:
+        applicability_eval.append(ApplicabilityEvalItem(
+            condition_key="continuous_background_action",
+            description="背景作用在实体运动的时空范围内连续且空间均匀",
+            status="uncertain",
+            source="interaction_hints",
+            notes="interaction_hints 包含 'field_present'，需确认场是否空间均匀",
+        ))
+    elif _has_gravity_hint:
+        applicability_eval.append(ApplicabilityEvalItem(
+            condition_key="continuous_background_action",
+            description="背景作用在实体运动的时空范围内连续且空间均匀",
+            status="satisfied",
+            source="interaction_hints",
+            notes="interaction_hints 包含 'gravity_present'，均匀重力满足条件",
+        ))
+    else:
+        applicability_eval.append(ApplicabilityEvalItem(
+            condition_key="continuous_background_action",
+            description="背景作用在实体运动的时空范围内连续且空间均匀",
+            status="uncertain",
+            source="default",
+            notes="未检测到明确背景作用 hint，无法确认",
+        ))
+
+    # 条件 3：是否适合连续状态演化
+    applicability_eval.append(ApplicabilityEvalItem(
+        condition_key="continuous_state_evolution",
+        description="实体状态演化可用连续时间微分方程描述",
+        status="satisfied",
+        source="default",
+        notes="粒子运动默认适合连续状态演化，除非有突变事件",
+    ))
+
+    # 条件 4：是否存在可能切断该 capability 的局部触发事件
+    _has_collision_hint = "collision_possible" in problem_spec.interaction_hints
+    if _has_collision_hint:
+        applicability_eval.append(ApplicabilityEvalItem(
+            condition_key="no_local_trigger_interrupt",
+            description="不存在可能中断连续状态演化的局部触发事件",
+            status="uncertain",
+            source="interaction_hints",
+            notes="interaction_hints 包含 'collision_possible'，可能存在碰撞中断连续演化",
+        ))
+    else:
+        applicability_eval.append(ApplicabilityEvalItem(
+            condition_key="no_local_trigger_interrupt",
+            description="不存在可能中断连续状态演化的局部触发事件",
+            status="satisfied",
+            source="interaction_hints",
+            notes="未检测到碰撞/接触 hint，连续演化不被中断",
+        ))
 
     # assumptions 根据 semantic hints（A 层）动态调整，未知时使用原型默认值（C 层）
     assumptions: list = []
@@ -166,6 +263,35 @@ def build_particle_motion_spec(
         "实体不经历足以打破质点近似的强旋转或大形变",
     ]
 
+    # ------------------------------------------------------------------
+    # validity_warnings：轻量警告机制（Goal 4）
+    # 检测文本中可能违反 validity_limits 的信号，生成结构化警告
+    # 警告不影响 admission 三态
+    # ------------------------------------------------------------------
+
+    validity_warnings: list = []
+    _source_text = problem_spec.source_input.lower()
+
+    # 警告 1：文本中出现旋转/刚体暗示，但仍按质点能力处理
+    import re as _re
+    if _re.search(
+        r"旋转|转动|rotation|angular|转动惯量|moment\s*of\s*inertia|angular\s*velocity|角速度",
+        _source_text,
+    ):
+        validity_warnings.append(ValidityWarning(
+            warning_key="rotation_hint_in_point_mass",
+            description="文本暗示旋转动力学，但仍按质点能力处理，质点近似可能不完全适用",
+            triggered_by="检测到旋转/角速度相关关键词",
+        ))
+
+    # 警告 2：文本中暗示复杂场变化，但仍按简单背景作用处理
+    if _re.search(r"变化的场|non[\s-]*uniform\s*field|非均匀|varying\s*gravity|变化重力", _source_text):
+        validity_warnings.append(ValidityWarning(
+            warning_key="complex_field_in_simple_background",
+            description="文本暗示非均匀或变化的场，但当前仍按均匀背景作用处理",
+            triggered_by="检测到非均匀场/变化重力相关关键词",
+        ))
+
     return ParticleMotionCapabilitySpec(
         applies_to_entities=entity_ids,
         target_mapping={t.get("name", ""): t for t in problem_spec.targets_of_interest},
@@ -177,8 +303,10 @@ def build_particle_motion_spec(
         initial_state_requirements=initial_state_requirements,
         background_interaction_hints=background_hints,
         applicability_conditions=applicability_conditions,
+        applicability_eval=applicability_eval,
         assumptions=assumptions,
         validity_limits=validity_limits,
+        validity_warnings=validity_warnings,
         required_entry_inputs=_REQUIRED_ENTRY_INPUTS,
         missing_entry_inputs=missing_entry,
     )

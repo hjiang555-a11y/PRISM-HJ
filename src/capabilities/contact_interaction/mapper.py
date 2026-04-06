@@ -33,6 +33,7 @@ C. 原型阶段 fallback 默认值
 
 from __future__ import annotations
 
+from src.capabilities.common.base import ApplicabilityEvalItem, ValidityWarning
 from src.capabilities.contact_interaction.spec import ContactInteractionCapabilitySpec
 from src.problem_semantic.models import ProblemSemanticSpec
 
@@ -125,8 +126,8 @@ def build_contact_interaction_spec(
         missing_entry.append("at_least_two_entities")
 
     # --- 碰前速度 ---
-    # A. 语义层：当前无直接速度已知 hint（需结合 explicit_conditions 或 pre_trigger）
-    _has_velocity_from_semantics = False
+    # A. 语义层：来自 input_availability_hints（结构化输入可得性，admission 闭环增强）
+    _has_velocity_from_semantics = problem_spec.input_availability_hints.pre_collision_velocity_known
     # B. 显式条件关键词
     _velocity_keywords = {"velocity", "speed", "v", "vx", "vy", "vz", "initial_velocity", "v0", "v0x", "v0y", "v_before"}
     _has_velocity_from_conditions = bool(_velocity_keywords & condition_names) or bool(pre_trigger)
@@ -135,8 +136,8 @@ def build_contact_interaction_spec(
         missing_entry.append("pre_collision_velocity_per_entity")
 
     # --- 质量 ---
-    # A. 语义层：当前无直接质量 hint
-    _has_mass_from_semantics = False
+    # A. 语义层：来自 input_availability_hints（结构化输入可得性，admission 闭环增强）
+    _has_mass_from_semantics = problem_spec.input_availability_hints.mass_known
     # B. 显式条件关键词
     _mass_keywords = {"mass", "m", "mass_kg", "weight"}
     _has_mass_from_conditions = bool(_mass_keywords & condition_names)
@@ -153,7 +154,98 @@ def build_contact_interaction_spec(
         "问题中存在两个或以上可识别的物理实体",
         "存在可识别的接触或碰撞事件",
         "交互可以用有限时刻的冲量近似描述（碰撞过程远短于整体运动时间尺度）",
+        "触发前状态基本可得（碰前速度和质量已知或可推断）",
     ]
+
+    # ------------------------------------------------------------------
+    # applicability_eval：结构化动态评估（Goal 2）
+    # 对每条 applicability_conditions 进行动态评估，输出带 status 的结构
+    # ------------------------------------------------------------------
+
+    applicability_eval: list = []
+
+    # 条件 1：是否存在两个及以上实体
+    if len(entity_ids) >= 2:
+        applicability_eval.append(ApplicabilityEvalItem(
+            condition_key="at_least_two_entities",
+            description="问题中存在两个或以上可识别的物理实体",
+            status="satisfied",
+            source="entity_count",
+            notes=f"已识别 {len(entity_ids)} 个实体",
+        ))
+    elif len(entity_ids) == 0:
+        applicability_eval.append(ApplicabilityEvalItem(
+            condition_key="at_least_two_entities",
+            description="问题中存在两个或以上可识别的物理实体",
+            status="uncertain",
+            source="entity_count",
+            notes="尚未提取实体（entity_extraction_pending），无法确认实体数量",
+        ))
+    else:
+        applicability_eval.append(ApplicabilityEvalItem(
+            condition_key="at_least_two_entities",
+            description="问题中存在两个或以上可识别的物理实体",
+            status="unsupported",
+            source="entity_count",
+            notes=f"当前仅识别 {len(entity_ids)} 个实体，接触交互需至少两个",
+        ))
+
+    # 条件 2：是否存在可识别接触/碰撞事件
+    _has_collision_hint = "collision_possible" in problem_spec.interaction_hints
+    _has_contact_hint = "contact_possible" in problem_spec.interaction_hints
+    if _has_collision_hint or _has_contact_hint:
+        applicability_eval.append(ApplicabilityEvalItem(
+            condition_key="collision_event_identified",
+            description="存在可识别的接触或碰撞事件",
+            status="satisfied",
+            source="interaction_hints",
+            notes="interaction_hints 包含碰撞/接触类型提示",
+        ))
+    else:
+        applicability_eval.append(ApplicabilityEvalItem(
+            condition_key="collision_event_identified",
+            description="存在可识别的接触或碰撞事件",
+            status="uncertain",
+            source="interaction_hints",
+            notes="未检测到碰撞/接触 hint，无法确认是否存在碰撞事件",
+        ))
+
+    # 条件 3：是否适合瞬时局部交互近似
+    _has_contact_hint_only = _has_contact_hint and not _has_collision_hint
+    if _has_contact_hint_only:
+        applicability_eval.append(ApplicabilityEvalItem(
+            condition_key="instantaneous_impulse_approximation",
+            description="交互可以用有限时刻的冲量近似描述（碰撞过程远短于整体运动时间尺度）",
+            status="uncertain",
+            source="interaction_hints",
+            notes="检测到接触（contact_possible）但未检测到碰撞，持续接触可能不适合瞬时近似",
+        ))
+    else:
+        applicability_eval.append(ApplicabilityEvalItem(
+            condition_key="instantaneous_impulse_approximation",
+            description="交互可以用有限时刻的冲量近似描述（碰撞过程远短于整体运动时间尺度）",
+            status="satisfied" if _has_collision_hint else "uncertain",
+            source="interaction_hints",
+            notes="碰撞场景默认适合瞬时近似" if _has_collision_hint else "无碰撞信息，无法确认",
+        ))
+
+    # 条件 4：触发前状态是否基本可得
+    _pre_state_available = (
+        bool(pre_trigger)
+        or problem_spec.input_availability_hints.pre_collision_velocity_known
+        or problem_spec.input_availability_hints.mass_known
+    )
+    applicability_eval.append(ApplicabilityEvalItem(
+        condition_key="pre_trigger_state_available",
+        description="触发前状态基本可得（碰前速度和质量已知或可推断）",
+        status="satisfied" if _pre_state_available else "uncertain",
+        source="input_availability_hints" if _pre_state_available else "default",
+        notes=(
+            "碰前速度或质量已从语义层/显式条件获取"
+            if _pre_state_available else
+            "未检测到碰前速度或质量信息，触发前状态不确定"
+        ),
+    ))
 
     # assumptions 根据 semantic hints（A 层）动态调整，未知时使用原型默认值（C 层）
     assumptions: list = []
@@ -181,6 +273,35 @@ def build_contact_interaction_spec(
         "仅适用于两体直接接触碰撞；多体同时碰撞需显式扩展 contact_pairs",
     ]
 
+    # ------------------------------------------------------------------
+    # validity_warnings：轻量警告机制（Goal 4）
+    # 检测文本中可能违反 validity_limits 的信号，生成结构化警告
+    # 警告不影响 admission 三态
+    # ------------------------------------------------------------------
+
+    validity_warnings: list = []
+    import re as _re
+    _source_text = problem_spec.source_input.lower()
+
+    # 警告 1：文本中暗示持续接触/摩擦/滑动，但仍按瞬时碰撞处理
+    if _re.search(r"持续接触|滑动|sliding|摩擦|friction|continuous\s*contact", _source_text):
+        validity_warnings.append(ValidityWarning(
+            warning_key="continuous_contact_in_impulse_model",
+            description="文本暗示持续接触或滑动摩擦，但当前仍按瞬时碰撞冲量模型处理",
+            triggered_by="检测到持续接触/滑动/摩擦相关关键词",
+        ))
+
+    # 警告 2：文本中暗示多体复杂碰撞，但当前能力仍按简单接触模型处理
+    _entity_count_for_warning = len(entity_ids) if entity_ids else 0
+    if _entity_count_for_warning > 2 or _re.search(
+        r"三体|多体|three[\s-]*body|multi[\s-]*body|三个.*碰|多个.*碰", _source_text
+    ):
+        validity_warnings.append(ValidityWarning(
+            warning_key="multi_body_collision",
+            description="文本暗示多体复杂碰撞（超过两体），但当前 capability 按简单两体接触模型处理",
+            triggered_by="检测到多于两个实体或多体碰撞关键词",
+        ))
+
     return ContactInteractionCapabilitySpec(
         applies_to_entities=entity_ids,
         target_mapping={t.get("name", ""): t for t in problem_spec.targets_of_interest},
@@ -193,8 +314,10 @@ def build_contact_interaction_spec(
         contact_model_hints=contact_hints,
         pre_trigger_state_requirements=pre_trigger,
         applicability_conditions=applicability_conditions,
+        applicability_eval=applicability_eval,
         assumptions=assumptions,
         validity_limits=validity_limits,
+        validity_warnings=validity_warnings,
         required_entry_inputs=_REQUIRED_ENTRY_INPUTS,
         missing_entry_inputs=missing_entry,
     )

@@ -20,6 +20,11 @@ Admission 判定规则
 - unresolved:  applies_to_entities 为空（无法确定作用对象）
 - deferred:    applies_to_entities 非空，但 missing_entry_inputs 非空（缺少必要入口要素）
 - admitted:    applies_to_entities 非空 且 missing_entry_inputs 为空
+
+Deferred 重入骨架（admission 闭环增强）
+--------------------------------------
+- deferred_capabilities 中每条记录包含 ``reentry_hints`` 字段
+- ``build_reentry_context(spec)`` 为 deferred capability 生成结构化补充建议和重入接口
 """
 
 from __future__ import annotations
@@ -34,6 +39,35 @@ _PERSISTENT_CAPABILITY_NAMES = {"particle_motion"}
 
 # 局部规则能力名称集合（对应 local_rule_plan）
 _LOCAL_CAPABILITY_NAMES = {"contact_interaction"}
+
+# 每个 required_entry_input 对应的可读名称和建议追问方向
+_ENTRY_INPUT_SUGGESTIONS: Dict[str, Dict[str, str]] = {
+    "initial_position_per_entity": {
+        "label": "初始位置",
+        "suggestion": "请补充各实体的初始位置（如高度、坐标等）",
+        "example_question": "物体的初始高度/位置是多少？",
+    },
+    "initial_velocity_per_entity": {
+        "label": "初始速度",
+        "suggestion": "请补充各实体的初始速度（如初速度大小和方向）",
+        "example_question": "物体的初始速度是多少？方向如何？",
+    },
+    "mass_per_entity": {
+        "label": "质量",
+        "suggestion": "请补充各实体的质量",
+        "example_question": "各物体的质量是多少（单位：kg）？",
+    },
+    "pre_collision_velocity_per_entity": {
+        "label": "碰前速度",
+        "suggestion": "请补充各实体碰撞前的速度",
+        "example_question": "碰撞前各物体的速度是多少？",
+    },
+    "at_least_two_entities": {
+        "label": "至少两个实体",
+        "suggestion": "请明确问题中存在至少两个可识别的物理实体",
+        "example_question": "问题中有哪些物体参与碰撞？",
+    },
+}
 
 
 def _judge_admission(spec: CapabilitySpec) -> str:
@@ -56,6 +90,57 @@ def _judge_admission(spec: CapabilitySpec) -> str:
     if spec.missing_entry_inputs:
         return "deferred"
     return "admitted"
+
+
+def build_reentry_context(spec: CapabilitySpec) -> Dict[str, Any]:
+    """
+    为 deferred capability 生成结构化重入上下文。
+
+    本函数为"补充信息后重新 admission"提供明确的重入接口。
+    返回的结构包含：缺少什么、推荐追问什么、涉及哪些实体。
+
+    Parameters
+    ----------
+    spec:
+        处于 deferred 状态的 CapabilitySpec。
+
+    Returns
+    -------
+    Dict[str, Any]
+        结构化重入上下文，包含：
+
+        - ``capability_name``: str
+        - ``applies_to_entities``: List[str]  — 涉及的实体（若已知）
+        - ``missing_entry_inputs``: List[str]  — 缺少的入口要素
+        - ``supplemental_suggestions``: List[Dict]  — 逐项补充建议
+        - ``reentry_note``: str  — 重入说明
+    """
+    supplemental_suggestions = []
+    for missing_item in spec.missing_entry_inputs:
+        hint = _ENTRY_INPUT_SUGGESTIONS.get(missing_item, {})
+        entity_note = (
+            f"涉及实体：{', '.join(spec.applies_to_entities)}"
+            if spec.applies_to_entities else
+            "实体尚未确定"
+        )
+        supplemental_suggestions.append({
+            "missing_item": missing_item,
+            "label": hint.get("label", missing_item),
+            "suggestion": hint.get("suggestion", f"请补充：{missing_item}"),
+            "example_question": hint.get("example_question", ""),
+            "entity_context": entity_note,
+        })
+
+    return {
+        "capability_name": spec.capability_name,
+        "applies_to_entities": list(spec.applies_to_entities),
+        "missing_entry_inputs": list(spec.missing_entry_inputs),
+        "supplemental_suggestions": supplemental_suggestions,
+        "reentry_note": (
+            f"capability '{spec.capability_name}' 当前处于 deferred 状态。"
+            "补充以上缺失入口要素后，可重新调用 build_execution_plan() 进行 admission。"
+        ),
+    }
 
 
 def build_execution_plan(capability_specs: List[CapabilitySpec]) -> ExecutionPlan:
@@ -111,9 +196,11 @@ def build_execution_plan(capability_specs: List[CapabilitySpec]) -> ExecutionPla
             continue
 
         if admission_status == "deferred":
+            reentry_ctx = build_reentry_context(spec)
             deferred_capabilities.append({
                 "capability_name": spec.capability_name,
                 "missing_entry_inputs": list(spec.missing_entry_inputs),
+                "reentry_hints": reentry_ctx,
             })
             plan_notes.append(
                 f"capability '{spec.capability_name}' admission=deferred："

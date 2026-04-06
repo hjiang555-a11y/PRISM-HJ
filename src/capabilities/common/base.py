@@ -17,9 +17,11 @@ ContactInteractionCapabilitySpec 等）均继承此基类。
 
 准入条件字段（Capability Admission Fields）
 ------------------------------------------
-- applicability_conditions: 能力适用的前提条件（定性描述）
+- applicability_conditions: 能力适用的前提条件（定性描述，静态文本）
+- applicability_eval: 适用条件的结构化动态评估结果（新增）
 - assumptions: 能力工作时依赖的物理假设（含理想化条件）
 - validity_limits: 能力假设成立的有效边界
+- validity_warnings: 有效边界触发的轻量警告（新增）
 - required_entry_inputs: 能力进入执行前必须已知的物理量类别列表
 - missing_entry_inputs: required_entry_inputs 中当前仍缺失的项（动态状态）
 
@@ -35,9 +37,67 @@ ContactInteractionCapabilitySpec 等）均继承此基类。
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
+
+
+class ApplicabilityEvalItem(BaseModel):
+    """
+    适用条件的结构化动态评估结果（单条）。
+
+    mapper 在构造 CapabilitySpec 时，对每条 applicability_conditions 进行
+    动态评估，结果以本结构记录。这使 admission 判断可追溯，并为后续更精细的
+    准入决策提供依据。
+
+    Attributes
+    ----------
+    condition_key:
+        条件标识键（机器可读，如 ``"point_mass_applicable"``）。
+    description:
+        条件的中文描述（与 applicability_conditions 中的文本对应）。
+    status:
+        评估状态。可能值：
+        ``"satisfied"``：条件满足；
+        ``"uncertain"``：无法确定，需更多信息；
+        ``"unsupported"``：条件不满足，此 capability 可能不适用。
+    source:
+        评估依据来源（如 ``"entity_model_hints"``、``"interaction_hints"``、
+        ``"entity_count"``、``"default"``）。
+    notes:
+        补充说明（可选）。
+    """
+
+    condition_key: str = Field(description="条件标识键（机器可读）")
+    description: str = Field(description="条件描述（中文）")
+    status: str = Field(
+        description="评估状态：'satisfied' | 'uncertain' | 'unsupported'",
+    )
+    source: str = Field(description="评估依据来源")
+    notes: Optional[str] = Field(default=None, description="补充说明（可选）")
+
+
+class ValidityWarning(BaseModel):
+    """
+    有效边界触发的轻量警告（单条）。
+
+    当问题文本中出现可能违反 capability validity_limits 的信号时，
+    mapper 生成本结构记录警告。警告不改变 admission 三态，但提供
+    可被测试断言的结构化信号。
+
+    Attributes
+    ----------
+    warning_key:
+        警告标识键（机器可读，如 ``"rotation_hint_in_point_mass"``）。
+    description:
+        警告描述（中文）。
+    triggered_by:
+        触发该警告的文本线索或条件描述。
+    """
+
+    warning_key: str = Field(description="警告标识键（机器可读）")
+    description: str = Field(description="警告描述（中文）")
+    triggered_by: str = Field(description="触发该警告的文本线索或条件描述")
 
 
 class CapabilitySpec(BaseModel):
@@ -88,8 +148,16 @@ class CapabilitySpec(BaseModel):
     applicability_conditions: List[str] = Field(
         default_factory=list,
         description=(
-            "能力适用的前提条件（定性描述）。"
+            "能力适用的前提条件（定性描述，静态文本）。"
             "描述能力可被激活的物理情境前提，如'实体可建模为质点'。"
+        ),
+    )
+    applicability_eval: List[ApplicabilityEvalItem] = Field(
+        default_factory=list,
+        description=(
+            "适用条件的结构化动态评估结果。"
+            "mapper 在构造 spec 时对每条 applicability_conditions 进行动态评估，"
+            "结果以 ApplicabilityEvalItem 列表记录，状态为 'satisfied'/'uncertain'/'unsupported'。"
         ),
     )
     assumptions: List[str] = Field(
@@ -104,6 +172,14 @@ class CapabilitySpec(BaseModel):
         description=(
             "能力假设成立的有效边界（定性描述）。"
             "如'非相对论性低速范围'、'碰撞时间远小于整体运动时间尺度'。"
+        ),
+    )
+    validity_warnings: List[ValidityWarning] = Field(
+        default_factory=list,
+        description=(
+            "有效边界触发的轻量警告列表。"
+            "当文本中出现可能违反 validity_limits 的信号时由 mapper 填充。"
+            "警告不改变 admission 三态，但提供可被测试断言的结构化信号。"
         ),
     )
     required_entry_inputs: List[str] = Field(

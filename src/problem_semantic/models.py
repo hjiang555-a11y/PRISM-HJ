@@ -7,6 +7,10 @@ ProblemSemanticSpec — 问题语义层最小输出对象 v0.1.
 v0.1 更新（P0 第四步）：新增 admission hints 四类结构化字段，
 为 capability admission 提供更丰富的上游语义来源，减少 mapper 对
 explicit_conditions 关键词匹配的依赖。
+
+v0.2 更新（admission 闭环增强）：新增 InputAvailabilityHints 结构化输入可得性模型，
+为 mapper 的 A 层判断提供明确的"物理量是否已知"语义来源，降低对 B 层关键词
+匹配的依赖。
 """
 
 from __future__ import annotations
@@ -14,6 +18,56 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
+
+
+class InputAvailabilityHints(BaseModel):
+    """
+    结构化输入可得性提示（问题级，按物理量类别）。
+
+    由 extraction pipeline 从问题文本中推断，表达 capability admission
+    所需关键物理量是否可从问题中获取。mapper 应优先将本结构作为 A 层来源，
+    判断对应入口要素是否已知。
+
+    Attributes
+    ----------
+    initial_position_known:
+        初始位置类物理量是否可得（如高度、初始坐标等）。
+    initial_velocity_known:
+        初始速度类物理量是否可得（如初速度、抛出速度等）。
+    mass_known:
+        质量类物理量是否可得（如质量、重量等）。
+    pre_collision_velocity_known:
+        碰前速度类物理量是否可得（如碰前各实体速度）。
+    sources:
+        各字段的信息来源标记。
+        可能值：``"text_explicit"``（文本明确给出数值）、
+        ``"text_inferred"``（文本暗示但未给具体数值）、
+        ``"default"``（未从文本推断，默认 False）。
+    """
+
+    initial_position_known: bool = Field(
+        default=False,
+        description="初始位置类物理量是否可得（如高度、初始坐标等）",
+    )
+    initial_velocity_known: bool = Field(
+        default=False,
+        description="初始速度类物理量是否可得（如初速度、抛出速度等）",
+    )
+    mass_known: bool = Field(
+        default=False,
+        description="质量类物理量是否可得（如质量、重量等）",
+    )
+    pre_collision_velocity_known: bool = Field(
+        default=False,
+        description="碰前速度类物理量是否可得（接触交互场景）",
+    )
+    sources: Dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "各字段的信息来源标记。"
+            "可能值：'text_explicit'、'text_inferred'、'default'。"
+        ),
+    )
 
 
 class ProblemSemanticSpec(BaseModel):
@@ -140,5 +194,18 @@ class ProblemSemanticSpec(BaseModel):
             "目标查询类型提示列表，由 extraction pipeline 推断。"
             "常见值：'ask_final_state'、'ask_state_at_time'、"
             "'ask_collision_outcome'、'ask_impact_time'。"
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # 结构化输入可得性提示（admission 闭环增强新增）
+    # ------------------------------------------------------------------
+
+    input_availability_hints: InputAvailabilityHints = Field(
+        default_factory=InputAvailabilityHints,
+        description=(
+            "结构化输入可得性提示（问题级）。"
+            "由 extraction pipeline 从问题文本中推断，"
+            "为 mapper 的 A 层 admission 判断提供'物理量是否已知'的结构化来源。"
         ),
     )
