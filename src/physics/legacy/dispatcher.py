@@ -118,19 +118,19 @@ def dispatch(psdl: PSDL) -> List[Dict]:
     )
 
     if solver_id == SOLVER_ANALYTIC_FREE_FALL:
-        from src.physics.analytic import solve_free_fall
+        from src.physics.legacy.analytic import solve_free_fall
         return solve_free_fall(psdl)
 
     if solver_id == SOLVER_ANALYTIC_PROJECTILE:
-        from src.physics.analytic import solve_projectile
+        from src.physics.legacy.analytic import solve_projectile
         return solve_projectile(psdl)
 
     if solver_id == SOLVER_ANALYTIC_COLLISION_1D:
-        from src.physics.analytic import solve_collision_1d_elastic
+        from src.physics.legacy.analytic import solve_collision_1d_elastic
         return solve_collision_1d_elastic(psdl)
 
     # Default: PyBullet numerical integration
-    from src.physics.engine import simulate_psdl
+    from src.physics.legacy.engine import simulate_psdl
     return simulate_psdl(psdl)
 
 

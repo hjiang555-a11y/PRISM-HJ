@@ -23,9 +23,9 @@ from __future__ import annotations
 
 import pytest
 
-from src.physics.analytic import solve_free_fall
-from src.physics.dispatcher import dispatch
-from src.physics.engine import PhysicsSimulator, simulate_psdl
+from src.physics.legacy.analytic import solve_free_fall
+from src.physics.legacy.dispatcher import dispatch
+from src.physics.legacy.engine import PhysicsSimulator, simulate_psdl
 from src.schema.psdl import (
     BoundaryType,
     ParticleObject,
@@ -33,7 +33,7 @@ from src.schema.psdl import (
     SpaceBox,
     WorldSettings,
 )
-from src.physics.templates import free_fall as ff_template
+from src.physics.legacy.templates import free_fall as ff_template
 
 
 # ---------------------------------------------------------------------------

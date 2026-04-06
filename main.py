@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 from src.llm.translator import generate_answer, text_to_psdl
-from src.physics.dispatcher import dispatch_with_validation
+from src.physics.legacy.dispatcher import dispatch_with_validation
 
 # New pipeline imports
 from src.capabilities.builder import build_capability_specs

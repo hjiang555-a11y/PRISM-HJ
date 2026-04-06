@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.physics.dispatcher import (
+from src.physics.legacy.dispatcher import (
     SOLVER_ANALYTIC_FREE_FALL,
     SOLVER_ANALYTIC_PROJECTILE,
     SOLVER_ANALYTIC_COLLISION_1D,
@@ -20,7 +20,7 @@ from src.physics.dispatcher import (
     select_solver,
 )
 from src.schema.psdl import ParticleObject, PSDL, WorldSettings
-from src.physics.templates import free_fall as ff_template
+from src.physics.legacy.templates import free_fall as ff_template
 
 
 # ---------------------------------------------------------------------------
