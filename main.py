@@ -3,6 +3,16 @@ PRISM-HJ — Natural Language → Physics Simulation
 
 Entry point for the command-line interface.
 
+Pipeline
+--------
+The system uses a single unified pipeline:
+
+1. **Problem Semantic Extraction** — ``extract_problem_semantics()``
+2. **Capability Spec Building** — ``build_capability_specs()``
+3. **Execution Plan Generation** — ``build_execution_plan()``
+4. **State Initialisation & Scheduler** — ``Scheduler.run()``
+5. **Natural Language Answer** — ``generate_answer()``
+
 Usage
 -----
 Single question::
@@ -21,10 +31,9 @@ import logging
 import sys
 from pathlib import Path
 
-from src.llm.translator import generate_answer, text_to_psdl
-from src.physics.legacy.dispatcher import dispatch_with_validation
+from src.llm.translator import generate_answer
 
-# New pipeline imports
+# Pipeline imports
 from src.capabilities.builder import build_capability_specs
 from src.execution.assembly.result_assembler import ExecutionResult
 from src.execution.runtime.scheduler import Scheduler
@@ -43,20 +52,26 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# New pipeline
+# Pipeline
 # ---------------------------------------------------------------------------
 
-def _can_use_new_pipeline(question: str) -> bool:
-    """Check if the question can be handled by the new execution pipeline."""
-    spec = extract_problem_semantics(question)
-    # New pipeline is viable when entities were extracted and unresolved items
-    # have been cleared (i.e. enrichment succeeded).
-    return bool(spec.entities) and not spec.unresolved_items
+def run_pipeline(question: str) -> None:
+    """Execute the full NL → Physics → Result pipeline."""
+    print(f"\n{'=' * 60}")
+    print(f"问题: {question}")
+    print("=" * 60)
+
+    result = run_execution_pipeline(question)
+
+    if result is not None:
+        _print_pipeline_result(question, result)
+    else:
+        print("\n[Pipeline: 语义提取未能生成可执行计划，请检查问题描述。]")
 
 
-def run_new_pipeline(question: str) -> dict | None:
+def run_execution_pipeline(question: str) -> dict | None:
     """
-    Run the new execution pipeline.
+    Run the execution pipeline.
 
     Returns a dict with keys ``target_results``, ``trigger_records``,
     ``execution_notes`` on success, or ``None`` if the pipeline cannot
@@ -67,7 +82,7 @@ def run_new_pipeline(question: str) -> dict | None:
         spec = extract_problem_semantics(question)
 
         if not spec.entities:
-            logger.info("新管线：实体为空，回退到旧管线")
+            logger.info("管线：实体为空，无法继续执行")
             return None
 
         # Step 2: Build capability specs
@@ -83,7 +98,7 @@ def run_new_pipeline(question: str) -> dict | None:
         plan = build_execution_plan(cap_specs, admission_hints=admission_hints)
 
         if not plan.admitted_capabilities:
-            logger.info("新管线：无通过准入的能力，回退到旧管线")
+            logger.info("管线：无通过准入的能力，无法执行")
             return None
 
         # Step 4: Initialize state set
@@ -107,7 +122,7 @@ def run_new_pipeline(question: str) -> dict | None:
         )
 
         logger.info(
-            "新管线执行完成：admitted=%s, targets=%s",
+            "管线执行完成：admitted=%s, targets=%s",
             plan.admitted_capabilities,
             list(result.target_results.keys()),
         )
@@ -119,35 +134,13 @@ def run_new_pipeline(question: str) -> dict | None:
         }
 
     except Exception as exc:
-        logger.warning("新管线异常，回退到旧管线: %s", exc)
+        logger.warning("管线异常: %s", exc)
         return None
 
 
-# ---------------------------------------------------------------------------
-# Core pipeline (dual-route: new → old fallback)
-# ---------------------------------------------------------------------------
-
-def run_pipeline(question: str) -> None:
-    """Execute the full NL → Physics → Result pipeline (dual-route)."""
-    print(f"\n{'=' * 60}")
-    print(f"问题: {question}")
-    print("=" * 60)
-
-    # --- Try new pipeline first ---
-    new_result = run_new_pipeline(question)
-
-    if new_result is not None:
-        _print_new_pipeline_result(question, new_result)
-        return
-
-    # --- Fallback: old pipeline ---
-    logger.info("使用旧管线 (dispatcher → analytic/engine)")
-    _run_legacy_pipeline(question)
-
-
-def _print_new_pipeline_result(question: str, result: dict) -> None:
-    """Print results from the new pipeline."""
-    print("\n[Pipeline: new execution pipeline]")
+def _print_pipeline_result(question: str, result: dict) -> None:
+    """Print results from the execution pipeline."""
+    print("\n[Pipeline: execution pipeline]")
 
     target_results = result["target_results"]
     if target_results:
@@ -184,53 +177,13 @@ def _print_new_pipeline_result(question: str, result: dict) -> None:
 
     print(f"\n[Final States: {json.dumps(final_states, ensure_ascii=False)}]")
 
-    # Generate natural language answer (completing pipeline parity with legacy route)
+    # Generate natural language answer
     try:
-        logger.info("Generating natural language answer (new pipeline)...")
+        logger.info("Generating natural language answer...")
         answer = generate_answer(question, final_states)
         print(f"\nAnswer:\n{answer}\n")
     except Exception as exc:
         logger.warning("自然语言答案生成失败（不影响物理结果）: %s", exc)
-
-
-def _run_legacy_pipeline(question: str) -> None:
-    """Run the legacy (old) pipeline."""
-    # Step 1: Translate natural language to PSDL (template-first, then LLM)
-    logger.info("Translating natural language to PSDL...")
-    psdl = text_to_psdl(question)
-
-    logger.info("PSDL (JSON):\n%s", psdl.pretty_print())
-
-    # Step 2: Dispatch to appropriate solver + run validation
-    logger.info("Running physics simulation...")
-    result = dispatch_with_validation(psdl)
-    final_states = result["states"]
-    solver_used = result["solver_used"]
-    validation_results = result["validation_results"]
-
-    logger.info(
-        "Solver: %s | Final states: %s",
-        solver_used,
-        json.dumps(final_states, ensure_ascii=False),
-    )
-
-    # Print solver and validation summary (always visible to CLI user)
-    print(f"\n[Pipeline: legacy (Solver: {solver_used})]")
-    if validation_results:
-        passed = sum(1 for r in validation_results if r["passed"])
-        total = len(validation_results)
-        print(f"[Validation: {passed}/{total} passed]")
-        for r in validation_results:
-            status = "PASS" if r["passed"] else "FAIL"
-            print(f"  {r['target']}: {status} — {r['message']}")
-    else:
-        print("[Validation: no targets defined]")
-
-    # Step 3: Generate natural language answer
-    logger.info("Generating natural language answer...")
-    answer = generate_answer(question, final_states)
-
-    print(f"\nAnswer:\n{answer}\n")
 
 
 # ---------------------------------------------------------------------------
@@ -264,11 +217,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Enable DEBUG logging.",
     )
-    parser.add_argument(
-        "--legacy",
-        action="store_true",
-        help="Force use of the legacy pipeline (skip new pipeline attempt).",
-    )
     return parser
 
 
@@ -300,10 +248,7 @@ def main(argv: list[str] | None = None) -> int:
     exit_code = 0
     for question in questions:
         try:
-            if args.legacy:
-                _run_legacy_pipeline(question)
-            else:
-                run_pipeline(question)
+            run_pipeline(question)
         except ConnectionError as exc:
             logger.error(
                 "连接错误: %s\n\n"

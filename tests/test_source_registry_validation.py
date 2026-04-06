@@ -252,23 +252,32 @@ class TestMechanicsConstraints:
 
 
 # ---------------------------------------------------------------------------
-# Free-fall and projectile templates pass source validation
+# PSDLs with proper source refs pass source validation
 # ---------------------------------------------------------------------------
 
-class TestTemplatePSDLsPassValidation:
-    def test_free_fall_template_passes(self):
-        from src.physics.legacy.templates.free_fall import build_psdl
-        psdl = build_psdl()
+class TestPSDLsWithSourceRefsPassValidation:
+    def test_psdl_with_tier1_primary_source_passes(self):
+        psdl = _psdl_with_refs(
+            "free_fall",
+            [SourceRef(source_id="openstax_university_physics_v1",
+                       role="primary_template_source")],
+        )
         validate_source_refs(psdl)  # Should not raise
 
-    def test_projectile_template_passes(self):
-        from src.physics.legacy.templates.projectile import build_psdl
-        psdl = build_psdl()
+    def test_psdl_with_tier1_secondary_ref_passes(self):
+        psdl = _psdl_with_refs(
+            "projectile",
+            [SourceRef(source_id="openstax_university_physics_v1",
+                       role="secondary_reference")],
+        )
         validate_source_refs(psdl)  # Should not raise
 
-    def test_collision_template_passes(self):
-        from src.physics.legacy.templates.collision import build_psdl
-        psdl = build_psdl()
+    def test_psdl_with_standards_units_ref_passes(self):
+        psdl = _psdl_with_refs(
+            None,
+            [SourceRef(source_id="nist_time_frequency_division",
+                       role="units_reference")],
+        )
         validate_source_refs(psdl)  # Should not raise
 
     def test_bare_string_refs_are_skipped(self):

@@ -171,56 +171,36 @@ class TestTier1AllowsTemplatePrimaryUse:
 
 
 # ---------------------------------------------------------------------------
-# Free-fall template source policy tests
+# Source ref structure and SourceRef model tests
 # ---------------------------------------------------------------------------
 
-class TestFreeFallTemplateSourcePolicy:
-    """Verify that the free_fall template does not reference standards-only sources."""
+class TestSourceRefModel:
+    """Verify SourceRef model and its constraints."""
 
-    def test_free_fall_default_source_refs_are_tier1(self, sources_by_id):
-        from src.physics.legacy.templates.free_fall import _DEFAULT_SOURCE_REFS, build_psdl
+    def test_source_ref_valid_roles(self):
+        from src.schema.psdl import SourceRef, SOURCE_REF_ROLES
+        for role in SOURCE_REF_ROLES:
+            ref = SourceRef(source_id="test_id", role=role)
+            assert ref.role == role
 
-        # Check default refs
-        for ref in _DEFAULT_SOURCE_REFS:
-            sid = ref.source_id
-            assert sid in sources_by_id, f"Default source ref {sid!r} not in registry"
-            tier = sources_by_id[sid]["tier"]
-            assert tier in ("tier_1_authoritative", "tier_2_high_quality_educational"), (
-                f"Default free_fall source {sid!r} should not be standards_only, got {tier!r}"
-            )
-
-    def test_free_fall_default_does_not_reference_nist(self):
-        from src.physics.legacy.templates.free_fall import _DEFAULT_SOURCE_REFS
-
-        ids = {r.source_id for r in _DEFAULT_SOURCE_REFS}
-        assert "nist_time_frequency_division" not in ids, (
-            "NIST must not be a default source ref for free_fall template"
-        )
-
-    def test_free_fall_default_does_not_reference_itu(self):
-        from src.physics.legacy.templates.free_fall import _DEFAULT_SOURCE_REFS
-
-        ids = {r.source_id for r in _DEFAULT_SOURCE_REFS}
-        assert "itu_time_frequency_handbook" not in ids, (
-            "ITU must not be a default source ref for free_fall template"
-        )
-
-    def test_free_fall_template_primary_source_role(self):
-        from src.physics.legacy.templates.free_fall import _DEFAULT_SOURCE_REFS
-
-        roles = {r.role for r in _DEFAULT_SOURCE_REFS}
-        assert "primary_template_source" in roles, (
-            "free_fall template defaults must include at least one primary_template_source"
-        )
-
-    def test_build_psdl_source_refs_are_source_ref_objects(self):
+    def test_source_ref_invalid_role_raises(self):
         from src.schema.psdl import SourceRef
-        from src.physics.legacy.templates.free_fall import build_psdl
+        import pydantic
+        with pytest.raises(pydantic.ValidationError):
+            SourceRef(source_id="test_id", role="invalid_role")
 
-        psdl = build_psdl()
-        # Default source_refs should contain SourceRef objects
-        assert len(psdl.source_refs) > 0
-        for ref in psdl.source_refs:
-            assert isinstance(ref, SourceRef), (
-                f"Expected SourceRef, got {type(ref).__name__}"
-            )
+    def test_tier1_sources_allow_primary_template_source(self, sources_by_id):
+        """All tier-1 sources should allow primary_template_source role."""
+        for sid, entry in sources_by_id.items():
+            if entry["tier"] == "tier_1_authoritative":
+                assert "primary_template_source" in entry["allowed_uses"], (
+                    f"Tier-1 source {sid!r} must allow primary_template_source"
+                )
+
+    def test_standards_only_sources_not_allow_template_source(self, sources_by_id):
+        """Standards-only sources should not allow primary_template_source."""
+        for sid, entry in sources_by_id.items():
+            if entry["tier"] == "standards_only":
+                assert "primary_template_source" not in entry["allowed_uses"], (
+                    f"Standards-only source {sid!r} must not allow primary_template_source"
+                )

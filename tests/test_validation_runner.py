@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.schema.psdl import ValidationTarget
-from src.physics.legacy.templates.free_fall import build_psdl
+from src.schema.psdl import PSDL, ParticleObject, ValidationTarget, WorldSettings
 from src.validation.runner import run_validation, _EXTRACTORS
 
 
@@ -18,6 +17,51 @@ from src.validation.runner import run_validation, _EXTRACTORS
 
 def _make_states(x=0.0, y=0.0, z=0.0, vx=0.0, vy=0.0, vz=0.0):
     return [{"position": [x, y, z], "velocity": [vx, vy, vz]}]
+
+
+def _build_free_fall_psdl(
+    height: float = 5.0,
+    duration: float = 1.0,
+    g: float = 9.8,
+    validation_tolerance_pct: float = 5.0,
+) -> PSDL:
+    """Build a free-fall PSDL for testing (replaces legacy template helper)."""
+    final_z = height - 0.5 * g * duration ** 2
+    final_vz = -g * duration
+    return PSDL(
+        scenario_type="free_fall",
+        assumptions=["no air resistance", "point mass", "uniform gravity"],
+        world=WorldSettings(
+            gravity=[0.0, 0.0, -g],
+            dt=0.01,
+            steps=int(duration / 0.01),
+            ground_plane=True,
+        ),
+        objects=[
+            ParticleObject(
+                mass=1.0,
+                radius=0.1,
+                position=[0.0, 0.0, height],
+                velocity=[0.0, 0.0, 0.0],
+            )
+        ],
+        validation_targets=[
+            ValidationTarget(
+                name="final_z",
+                expected_value=final_z,
+                tolerance_pct=validation_tolerance_pct,
+                unit="m",
+                dimension="length",
+            ),
+            ValidationTarget(
+                name="final_vz",
+                expected_value=final_vz,
+                tolerance_pct=validation_tolerance_pct,
+                unit="m/s",
+                dimension="velocity",
+            ),
+        ],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -51,13 +95,13 @@ class TestExtractors:
 
 class TestRunValidationOutputStructure:
     def test_returns_list(self):
-        psdl = build_psdl(height=5.0, duration=1.0)
+        psdl = _build_free_fall_psdl(height=5.0, duration=1.0)
         states = _make_states(z=0.1, vz=-9.8)
         results = run_validation(psdl, states)
         assert isinstance(results, list)
 
     def test_result_has_required_keys(self):
-        psdl = build_psdl(height=5.0, duration=1.0)
+        psdl = _build_free_fall_psdl(height=5.0, duration=1.0)
         states = _make_states(z=0.1, vz=-9.8)
         results = run_validation(psdl, states)
         required_keys = {"target", "passed", "observed", "expected", "unit",
@@ -68,7 +112,7 @@ class TestRunValidationOutputStructure:
             )
 
     def test_result_count_matches_targets(self):
-        psdl = build_psdl(height=5.0, duration=1.0)
+        psdl = _build_free_fall_psdl(height=5.0, duration=1.0)
         states = _make_states(z=0.1, vz=-9.8)
         results = run_validation(psdl, states)
         assert len(results) == len(psdl.validation_targets)
@@ -94,14 +138,14 @@ class TestFreeFallValidationPassFail:
 
     def test_exact_values_both_pass(self):
         # height=5.0, duration=1.0, g=9.8 → z=0.1, vz=-9.8
-        psdl = build_psdl(height=5.0, duration=1.0, g=9.8)
+        psdl = _build_free_fall_psdl(height=5.0, duration=1.0, g=9.8)
         states = _make_states(z=0.1, vz=-9.8)
         results = run_validation(psdl, states)
         for r in results:
             assert r["passed"], f"Expected PASS but got FAIL: {r['message']}"
 
     def test_wrong_z_fails(self):
-        psdl = build_psdl(height=5.0, duration=1.0, g=9.8)
+        psdl = _build_free_fall_psdl(height=5.0, duration=1.0, g=9.8)
         # z is way off — should fail
         states = _make_states(z=99.0, vz=-9.8)
         results = run_validation(psdl, states)
@@ -109,7 +153,7 @@ class TestFreeFallValidationPassFail:
         assert not z_result["passed"]
 
     def test_wrong_vz_fails(self):
-        psdl = build_psdl(height=5.0, duration=1.0, g=9.8)
+        psdl = _build_free_fall_psdl(height=5.0, duration=1.0, g=9.8)
         # vz is way off — should fail
         states = _make_states(z=0.1, vz=100.0)
         results = run_validation(psdl, states)
@@ -117,7 +161,7 @@ class TestFreeFallValidationPassFail:
         assert not vz_result["passed"]
 
     def test_small_deviation_within_tolerance_passes(self):
-        psdl = build_psdl(height=5.0, duration=1.0, g=9.8,
+        psdl = _build_free_fall_psdl(height=5.0, duration=1.0, g=9.8,
                           validation_tolerance_pct=1.0)
         # z=0.1 ± 0.5% (within 1% tolerance)
         states = _make_states(z=0.1005, vz=-9.8)
@@ -126,7 +170,7 @@ class TestFreeFallValidationPassFail:
         assert z_result["passed"]
 
     def test_deviation_beyond_tolerance_fails(self):
-        psdl = build_psdl(height=5.0, duration=1.0, g=9.8,
+        psdl = _build_free_fall_psdl(height=5.0, duration=1.0, g=9.8,
                           validation_tolerance_pct=1.0)
         # z=0.1 × 1.05 = 0.105 → 5% off → should fail at 1% tol
         states = _make_states(z=0.105, vz=-9.8)
@@ -160,7 +204,7 @@ class TestValidationWithUnknownTargetName:
 
 class TestValidationWithEmptyStates:
     def test_empty_states_all_fail(self):
-        psdl = build_psdl(height=5.0, duration=1.0)
+        psdl = _build_free_fall_psdl(height=5.0, duration=1.0)
         results = run_validation(psdl, [])
         for r in results:
             assert not r["passed"]
@@ -173,21 +217,21 @@ class TestValidationWithEmptyStates:
 
 class TestResultFieldTypes:
     def test_passed_is_bool(self):
-        psdl = build_psdl()
+        psdl = _build_free_fall_psdl()
         states = _make_states(z=0.1, vz=-9.8)
         results = run_validation(psdl, states)
         for r in results:
             assert isinstance(r["passed"], bool)
 
     def test_observed_is_float_or_none(self):
-        psdl = build_psdl()
+        psdl = _build_free_fall_psdl()
         states = _make_states(z=0.1, vz=-9.8)
         results = run_validation(psdl, states)
         for r in results:
             assert r["observed"] is None or isinstance(r["observed"], float)
 
     def test_message_is_nonempty_string(self):
-        psdl = build_psdl()
+        psdl = _build_free_fall_psdl()
         states = _make_states(z=0.1, vz=-9.8)
         results = run_validation(psdl, states)
         for r in results:

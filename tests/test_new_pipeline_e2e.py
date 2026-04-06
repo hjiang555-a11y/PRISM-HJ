@@ -280,32 +280,40 @@ class TestAdmissionHintsFiltering:
 # ---------------------------------------------------------------------------
 
 class TestPipelineRouting:
-    """Test dual-route routing logic."""
+    """Test pipeline routing logic."""
 
-    def test_known_scenario_uses_new_pipeline(self):
-        """Known scenario types should produce enriched spec."""
-        from main import _can_use_new_pipeline
-        assert _can_use_new_pipeline("一个2kg的球从高度5米自由落体，1秒后")
-        assert _can_use_new_pipeline("A 1kg ball dropped from height 10m, after 1s")
+    def test_known_scenario_produces_result(self):
+        """Known scenario types should produce execution result."""
+        from main import run_execution_pipeline
+        result = run_execution_pipeline("一个2kg的球从高度5米自由落体，1秒后")
+        assert result is not None
+        assert "target_results" in result
 
-    def test_unknown_scenario_falls_back(self):
-        """Unknown scenario types should not be handled by new pipeline."""
-        from main import _can_use_new_pipeline
-        assert not _can_use_new_pipeline("什么是量子力学？")
-        assert not _can_use_new_pipeline("Hello world")
+    def test_known_scenario_english(self):
+        """English known scenario also produces result."""
+        from main import run_execution_pipeline
+        result = run_execution_pipeline("A 1kg ball dropped from height 10m, after 1s")
+        assert result is not None
+        assert "target_results" in result
 
-    def test_new_pipeline_returns_result(self):
-        """New pipeline should return result dict for known scenarios."""
-        from main import run_new_pipeline
-        result = run_new_pipeline("一个2kg的球从高度5米自由落体，1秒后位置？")
+    def test_unknown_scenario_returns_none(self):
+        """Unknown scenario types return None."""
+        from main import run_execution_pipeline
+        assert run_execution_pipeline("什么是量子力学？") is None
+        assert run_execution_pipeline("Hello world") is None
+
+    def test_pipeline_returns_result_dict(self):
+        """Pipeline should return result dict for known scenarios."""
+        from main import run_execution_pipeline
+        result = run_execution_pipeline("一个2kg的球从高度5米自由落体，1秒后位置？")
         assert result is not None
         assert "target_results" in result
         assert "state_set" in result
 
-    def test_new_pipeline_returns_none_for_unknown(self):
-        """New pipeline should return None for unknown scenarios."""
-        from main import run_new_pipeline
-        result = run_new_pipeline("解释牛顿第三定律")
+    def test_pipeline_returns_none_for_unknown(self):
+        """Pipeline should return None for unknown scenarios."""
+        from main import run_execution_pipeline
+        result = run_execution_pipeline("解释牛顿第三定律")
         assert result is None
 
 
