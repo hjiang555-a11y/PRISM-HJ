@@ -1,6 +1,15 @@
 """
 PyBullet physics engine wrapper for PRISM-HJ.
 
+.. note::
+    **LEGACY COMPATIBILITY SHIM** — This module wraps PyBullet for general
+    numerical integration and serves as the fallback solver for scenario types
+    not handled by the analytic solvers.  It has no equivalent in the new
+    execution core yet.
+
+    Frozen in P0.  Will be superseded once ``Scheduler`` provides a general
+    numerical fallback path.  Do not extend this module with new scenario logic.
+
 Runs in DIRECT (headless) mode – no GUI, fully deterministic.
 """
 

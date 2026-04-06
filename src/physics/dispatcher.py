@@ -1,6 +1,15 @@
 """
 Solver dispatcher — v0.2.
 
+.. warning::
+    **LEGACY / FROZEN** — This module implements the old ``scenario_type →
+    solver`` routing anti-pattern.  It is frozen in P0 and will be deleted in
+    a future iteration once ``main.py`` is ported to the new execution pipeline
+    (``Scheduler`` + capability-driven rules).
+
+    **Do not add new ``elif`` branches or new solver imports here.**
+    New physics logic belongs in ``src/execution/rules/``.
+
 The dispatcher is the entry-point for the *knowledge compiler* layer
 (layer 3 in the four-layer architecture).  It inspects the PSDL
 ``scenario_type`` field and routes the document to the most appropriate

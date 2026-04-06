@@ -1,12 +1,15 @@
 """
-Lightweight parameter extractor for template-first compilation.
+Parameter extractors for problem-semantic layer — v0.1.
 
-Uses simple regex patterns to extract numeric physics parameters from natural
-language questions (Chinese + English) for known scenario types.
+Lightweight regex-based extractors that parse numeric physics parameters from
+natural language questions (Chinese + English) for the three canonical scenario
+types supported by the first-prototype.
 
-This module is intentionally minimal — it only handles the most common problem
-phrasings.  If extraction returns ``None`` for required parameters, the caller
-(``text_to_psdl``) falls back to the full LLM translation path.
+These functions belong in the *problem-semantic* layer because extracting
+structured parameters from free-text input is a problem-understanding concern,
+not a template-construction concern.
+
+Migrated from ``src/templates/extractor.py`` (P0 legacy absorption).
 
 Supported extractors
 --------------------
