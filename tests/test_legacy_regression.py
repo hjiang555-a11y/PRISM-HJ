@@ -173,8 +173,11 @@ class TestFreeFallGolden:
         """
         result = self._run()
         z = result.target_results["final_position"][2]
-        # Expected Euler result (exact for this integrator + parameters)
-        expected_euler = 5.0 + (-9.8) * (self.DT ** 2) * (self.STEPS * (self.STEPS + 1) / 2)
+        # Expected Euler result (exact for this integrator + parameters).
+        # Formula: z_N = z0 + g·dt²·∑_{n=1}^{N} n = z0 + g·dt²·N·(N+1)/2
+        # For N=100, dt=0.01: ∑ = 5050, dt² = 1e-4 → z ≈ 0.051 m
+        gauss_sum = self.STEPS * (self.STEPS + 1) / 2  # = 5050 for STEPS=100
+        expected_euler = 5.0 + (-9.8) * (self.DT ** 2) * gauss_sum
         assert abs(z - expected_euler) < 1e-6, (
             f"Euler position mismatch: expected {expected_euler:.6f}, got {z:.6f}"
         )
