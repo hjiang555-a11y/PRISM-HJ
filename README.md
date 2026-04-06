@@ -1,426 +1,225 @@
-# PRISM-HJ：自然语言 → 物理模拟
+PRISM-HJ：时空驱动的自然语言物理模拟
+https://img.shields.io/badge/License-Apache%25202.0-blue.svg
+https://img.shields.io/badge/python-3.10+-blue.svg
+https://img.shields.io/badge/Physics-PyBullet-orange
+PRISM-HJ 是一个以时空为核心控制变量的物理模拟系统。它将自然语言描述的物理问题自动解析为时空事件序列，根据包含时空条件，触发对应的物理公理（牛顿定律、动量守恒等），并以并行、条件分支或串行方式调用这些公理，最终返回自然语言答案，完全依赖已知物理定律和时空显式建模。
+核心理念：token承载的内容太少，需要形成中间事件类型的描述才能对应物理实在，对应公理调用；时空是物理过程的承载条件，任何现象都发生在特定的时空坐标上，公理的调用由时空条件决定符合现实情况。关心的问题应有明确的描述，包含在一个结构化参量集合里，是事件描述的不可缺少部分。
+________________________________________
+目录
+•	时空驱动的设计哲学
+•	系统框架
+•	公理与时空条件映射
+•	当前实现状态
+•	使用示例
+•	项目结构
+•	扩展与定制
+•	已知限制
+•	贡献与许可
+________________________________________
+时空驱动的设计哲学
+为什么以时空为核心？
+•	物理定律本质上是时空中的约束关系：牛顿第二定律描述加速度如何随时间改变位置；碰撞发生在特定空间点与时刻；场在时空连续域中定义。
+•	自然语言中的物理问题天然包含时空信息：“1秒后”“当球碰到地面时”“在x>10的区域”都是时空条件。
+•	控制复杂性：将复杂的物理场景分解为时空片段，每个片段内公理可独立或并行求解，通过时空边界条件衔接。
+时空控制的基本单元
+概念	定义	示例
+时空坐标	(t,x,y,z)(t,x,y,z) 或广义坐标	第2秒、高度5米处
+事件	时空坐标上发生的物理状态变化	碰撞、进入/离开边界、力场开启
+时空区域	连续的时空集合	自由落体区间、弹簧振动区间
+触发条件	事件发生的时空判据	z <= 0（触地）、t == 1.0
+演化调度	按时间顺序或空间顺序执行公理	先自由落体，碰撞后反弹
+公理调用的控制模式
+系统支持三种时空驱动的控制模式：
+1.	串行（Sequential）：公理按时序先后执行，前一阶段输出作为后一阶段的初始条件。
+示例：自由落体 → 触地碰撞 → 反弹上升。
+2.	并行（Parallel）：多个公理在同一时空区域内同时生效，状态叠加。
+示例：重力 + 空气阻力 + 弹簧力同时作用于同一质点。
+3.	条件触发（Conditional）：当时空坐标满足谓词时，动态切换或激活公理。
+示例：当 x > 10 时开启阻力，否则无阻力。
+________________________________________
+系统框架
+整体数据流（时空视角）
+text
+自然语言输入
+     │
+     ▼
+┌─────────────────────────────────┐
+│  LLM 翻译器                      │
+│  提取时空实体、事件、条件         │
+└─────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────┐
+│  时空场景构建器                  │
+│  生成时空坐标、区域、时间线       │
+└─────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────┐
+│  事件解析器                      │
+│  将触发条件映射到公理调用         │
+└─────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────┐
+│  演化调度器                      │
+│  决定串行/并行/条件分支的执行图   │
+└─────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────┐
+│  公理执行引擎                    │
+│  调用解析求解器或 PyBullet        │
+└─────────────────────────────────┘
+     │
+     ▼
+┌─────────────────────────────────┐
+│  时空结果聚合                    │
+│  按时空坐标输出状态               │
+└─────────────────────────────────┘
+     │
+     ▼
+  LLM 解释器 → 自然语言答案
+核心模块与职责（时空视角）
+模块	路径	时空相关职责
+时空语义提取	src/problem_semantic/	从自然语言中抽取时间状语、空间介词、条件从句，生成 SpatialTemporalSpec
+事件与触发条件	src/planning/events.py（待定）	整体应为一个总事件，可以分化成子事件驱动下一步；定义事件类型（碰撞、到达边界、定时采样）及时空判据
+演化调度器	src/planning/scheduler.py（待定）¬¬¬	构建执行图（DAG），决定并行/串行/分支
+公理映射器	src/capabilities/	将物理公理（牛顿定律、动量守恒等）封装为可调用的规则，声明其适用时空条件
+时空执行引擎	src/physics/	在给定时空区间内推进状态，处理事件触发，支持多规则叠加
+时空结果存储	src/physics/result.py（待定）	按时间步或事件点存储状态快照，便于查询“t=1秒时”
+________________________________________
+公理与时空条件映射
+以下列出当前已实现的公理及其时空触发条件、控制模式和所需时空坐标（时空坐标可以方便变换，适应观察者设定）。
+1. 自由落体（匀加速运动）
+属性	内容
+对应公理	牛顿第二定律：a=ga=g（常数）
+时空条件	时空区域：物体在空中（z>0z>0），且未与其他物体接触；时间区间：从初始时刻到触地前
+控制模式	串行片段（独立运行，结束后触发碰撞事件）
+所需时空坐标	初始时间 t0t0、初始位置 (x0,y0,z0)(x0,y0,z0)、初始速度 v⃗0v0
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
-[![PyBullet](https://img.shields.io/badge/Physics-PyBullet-orange)](https://pybullet.org)
+输出	状态函数 z(t),v(t)z(t),v(t) 在时空区间内
+2. 弹性/非弹性碰撞
+属性	内容
+对应公理	动量守恒（+ 动能守恒或恢复系数）
+时空条件	事件触发：两个物体质心距离 ≤ 半径之和 的瞬间
+控制模式	条件触发（瞬时事件，打断当前演化，计算后继续）
+所需时空坐标	碰撞时刻 tctc、碰撞点空间位置 r⃗crc、碰前速度矢量
 
-**PRISM-HJ** 是一个轻量级命令行工具，将自然语言描述的物理问题自动转换为结构化物理场景契约（**PSDL v0.1**），
-通过智能 dispatcher 选择最优求解器（解析精确解或 PyBullet 数值模拟），最后用自然语言返回结果。
-整个过程 **零训练**，完全依赖人类已知的物理定律和 LLM 的理解能力。
+输出	碰后瞬时速度
+4. 矩形边界约束
+属性	内容
+对应公理	动量定理（法向速度反向并乘以恢复系数）
+时空条件	事件触发：粒子坐标超出边界（x≤xminx≤xmin 等）
 
-> 核心理念：**PSDL 是系统的知识契约，执行层只是实现细节。**
+控制模式	条件触发（瞬时反弹）
+所需时空坐标	穿透时刻 tbtb、穿透面位置
 
----
-
-## 架构更新说明
-
-项目正在从 **scenario / solver-centered architecture** 转向 **state-set and rule-oriented execution core**。
-
-新方向的核心要素：
-
-- **Target-related state sets**：执行核心围绕目标相关状态集展开，而非预定义的题型分类
-- **Spatiotemporal conditions**：时空条件是规则激活与调度的核心依据
-- **Primitive physical rules**：每条规则表达一个基础物理关系，可独立声明和叠加
-- **Persistent interactions**：持续作用（如重力、电场）在整个演化过程中始终贡献
-- **Triggered local interactions**：局部作用（如碰撞、接触力）在条件满足时短时激活
-- **Result assembly**：从状态集演化结果中提取面向目标的物理量输出
-
-### 三层表示体系
-
-项目在 state-set / rule-oriented execution core 基础上引入三层表示体系，作为架构级规划对象（尚非稳定代码实现）：
-
-- **Problem Semantic Layer（问题语义层）**：解析输入，提取实体、关心目标（`targets_of_interest`）、显式条件及事件信息，输出 `rule_extraction_inputs` 与 `rule_execution_inputs`；对应规划对象 `ProblemSemanticSpec`。
-- **Capability Representation Layer（能力表示层）**：针对候选能力族生成能力表示（`CapabilitySpec`），显式携带 `rule_extraction_inputs` 与 `rule_execution_inputs`。
-- **Execution Plan Layer（执行计划层）**：将各能力表示整合为统一执行计划（`ExecutionPlan`），驱动规则驱动演化与 Result Assembly。
-
-**当前阶段重点**：事件提取（Event Extraction）的输出不只是文本结构化——它必须显式准备 `rule_extraction_inputs`（规则激活依据）与 `rule_execution_inputs`（规则计算输入），构成最小闭环主线。跨领域扩展（cross-domain rule composition）作为未来可扩展方向保留。
-
-现有 `free_fall`、`projectile`、`collision` 模块定位为 legacy / reference / testing-oriented modules，不代表执行核心长期方向。
-
-详细说明见：
-- [`docs/PRISM_execution_core_rearchitecture.md`](docs/PRISM_execution_core_rearchitecture.md)（执行核心重构总纲）
-- [`docs/PRISM_execution_core_interfaces_v0_1.md`](docs/PRISM_execution_core_interfaces_v0_1.md)（新执行核心接口草案 v0.1）
-- [`docs/PRISM_representation_layers_architecture_decision.md`](docs/PRISM_representation_layers_architecture_decision.md)（分层表示架构决议草案）
-- [`docs/PRISM_event_extraction_minimum_contract_v0_1.md`](docs/PRISM_event_extraction_minimum_contract_v0_1.md)（事件提取最小输出契约 v0.1）
-
----
-
-## 四层架构（v0.2）
-
-完整架构说明见 [`docs/architecture.md`](docs/architecture.md)。
-
-```
-用户输入（自然语言）
-        │
-        ▼
-┌──────────────────────────────────────┐
-│  第一层：NL 接口层                    │  模板优先路径：classify_scenario()
-│  src/llm/translator.py               │  → free_fall / projectile / collision
-│  src/templates/extractor.py          │  → 参数提取 → 模板 PSDL（无 LLM）
-└──────────────────────────────────────┘  ↓ 若无法提取则 fallback → LLM
-        │
-        ▼
-┌──────────────────────────────────────┐
-│  第二层：PSDL 契约层                  │  schema_version / scenario_type /
-│  src/schema/psdl.py                  │  assumptions / source_refs /
-│  src/schema/units.py                 │  validation_targets + 量纲校验
-│  src/sources/validation.py           │  ← source registry 运行时校验
-└──────────────────────────────────────┘
-        │
-        ▼
-┌──────────────────────────────────────┐
-│  第三层：知识编译层                   │  场景分类 → 求解器路由
-│  src/physics/dispatcher.py           │  src/templates/{free_fall, projectile,
-│  src/validation/runner.py            │               collision}.py
-└──────────────────────────────────────┘
-        │
-        ├─── free_fall  ──▶ analytic.solve_free_fall()（精确解）
-        ├─── projectile ──▶ analytic.solve_projectile()（精确解）
-        ├─── collision  ──▶ analytic.solve_collision_1d_elastic()（精确解）
-        └─── 其他       ──▶ engine.simulate_psdl()（PyBullet 数值积分）
-        │
-        ▼
-┌──────────────────────────────────────┐
-│  第四层：确定性执行层 + 验证          │  可重现、可审计的物理求解
-│  src/physics/analytic.py             │  + 自动验证 validation_targets
-│  src/physics/engine.py               │
-└──────────────────────────────────────┘
-        │
-        ▼
-     最终回答（NL）+ Validation Summary
-```
-
----
-
-## 快速开始
-
-### 1. 环境准备
-
-```bash
-# 克隆仓库
-git clone https://github.com/yourusername/PRISM-HJ.git
-cd PRISM-HJ
-
-# 创建 conda 环境（推荐）
-conda create -n prism python=3.10 -y
-conda activate prism
-
-# 安装 Python 依赖
-pip install -r requirements.txt
-```
-
-### 2. 安装 Ollama 并拉取模型
-
-```bash
-# 安装 Ollama（Linux / macOS / WSL2）
-curl -fsSL https://ollama.com/install.sh | sh
-
-# 拉取 DeepSeek-R1:32B（约 20GB，需耐心等待）
-ollama pull deepseek-r1:32b
-
-# 在另一个终端保持 Ollama 服务运行
-ollama serve
-```
-
-### 3. 运行第一个测试
-
-```bash
-python main.py --question "一个2kg的球从高度5米自由落体，忽略空气阻力，1秒后球的位置和速度？"
-```
-
-示例输出（模板优先路径，无 LLM 调用）：
-
-```
-[Solver: analytic_free_fall]
-[Validation: 2/2 passed]
-  final_z: PASS — observed=0.1 m, expected=0.1 m, tol=1.0%
-  final_vz: PASS — observed=-9.8 m/s, expected=-9.8 m/s, tol=1.0%
-```
-
-#### 批量处理
-
-```bash
-python main.py --file examples/questions.txt
-```
-
-### 4. 运行单元测试
-
-```bash
-python -m pytest tests/ -v
-```
-
-### 5. 探索模式（已预留，未实现）
-
-项目已预留探索模式，用于未来支持参数空间探索、有趣性度量、场景组合与假设生成等能力。当前尚未实现真实探索算法。
-
-运行 `--explore` 时，程序会返回并显示一个**结构化占位结果**，其中包含固定的 `mode/status/message/results` 外层协议；当前 `results` 为空列表。 该模式不会进入正常的确定性模拟主流程，因此对现有 deterministic workflow 零影响。
-
----
-
-## 项目结构
-
-```
+输出	反弹后速度、修正后的位置
+5. 待扩展公理的时空条件（占位）
+公理	时空条件	控制模式	所需时空坐标	状态
+空气阻力	整个运动区间内（或仅速度 > 阈值时）	并行（与重力叠加）	介质密度、阻力系数	待定
+弹簧振子	物体附着在弹簧上，在弹性范围内	串行（简谐振动区间）	平衡位置、劲度系数	待定
+万有引力	两质点之间，始终作用	并行（多体问题）	质量、距离、G	待定
+电磁力	带电粒子在场中	并行/条件	电荷、场矢量	待定
+________________________________________
+当前实现状态
+基于 2026-04-06 代码冻结。系统已具备时空事件的基础框架，部分公理已支持串行和条件触发，并行能力及完整调度器正在建设中。
+✅ 已完成（时空相关）
+功能	时空控制能力
+时空语义提取	能从自然语言中抽取时间状语（“1秒后”）、空间位置（“高度5米”）、条件（“当…时”）
+串行演化	自由落体 → 碰撞 → 反弹 的时序衔接
+条件触发事件	碰撞检测、边界触发已集成到 PyBullet 中
+公理映射到时空区域	CapabilitySpec 中包含 applicability_conditions（如“在重力场中”）
+执行计划调度	ExecutionPlan 支持串行规则列表，条件分支待完善
+🚧 部分完成（时空演进中）
+项目	当前能力	待完善
+并行公理叠加	尚无显式并行框架	需实现多力同时作用（重力+阻力）的加法器
+时空区域定义	仅有边界框，无任意形状区域	支持圆形、多边形区域及条件谓词
+时间离散化控制	固定时间步长	支持自适应步长、事件精确定位
+时空结果查询	仅返回最终状态	按任意时空坐标查询中间状态
+复杂条件分支	无	支持 if-then-else 执行路径
+📅 规划中（未开始）
+•	全功能演化调度器：支持 DAG 调度、并行分支、同步点。
+•	时空连续性检查：确保跨区域边界条件连续（位置、速度连续）。
+•	多时空尺度模拟：不同区域使用不同时间步长。
+•	相对论时空（远期）：洛伦兹变换下的公理调用。
+________________________________________
+使用示例
+示例 1：串行控制（自由落体 + 碰撞）
+bash
+python main.py --question "一个2kg的球从高度5米自由落体，撞到地面后反弹，恢复系数0.8，求第一次触地后的速度。"
+系统内部时空处理：
+1.	解析时空条件：初始时刻 t=0t=0，位置 z=5z=5，地面为 z=0z=0。
+2.	串行片段1：自由落体公理，触发条件 z>0z>0，终止事件 z=0z=0。
+3.	事件触发：碰撞公理，时空坐标 tc≈1.01stc≈1.01s，z=0z=0。
+4.	串行片段2：反弹后上升（若问题继续问）。
+示例 2：条件触发（边界反弹）
+bash
+python main.py --question "一个球在1x1x1的立方体盒子中，初速度(1,1,1)，重力不计，求球第一次碰到x=1边界后的速度。"
+时空处理：
+•	空间区域：立方体边界。
+•	事件触发：当 x≥1x≥1 时，调用边界碰撞公理，法向速度反向。
+示例 3：并行叠加（待扩展）
+未来支持：
+bash
+python main.py --question "球受重力和空气阻力（k=0.1），初速度竖直向上20m/s，求最高点时间。"
+并行模式：重力与阻力同时作用，合力 F=mg−kvF=mg−kv。
+________________________________________
+项目结构（可变更）
+text
 PRISM-HJ/
-├── LICENSE                  (Apache 2.0)
-├── README.md                (本文件)
-├── requirements.txt         (Python 依赖)
-├── main.py                  (主入口，argparse CLI)
-├── data/
-│   └── sources/
-│       └── registry.yaml    # 来源注册表（tier 治理）
-├── docs/
-│   ├── architecture.md      # 四层架构详细说明
-│   └── source_policy.md     # 来源治理政策（v0.2）
+├── LICENSE
+├── README.md
+├── requirements.txt
+├── main.py                      # 主入口
 ├── src/
-│   ├── schema/
-│   │   ├── psdl.py          # PSDL v0.1 知识契约（Pydantic）
-│   │   └── units.py         # 量纲/单位框架
-│   ├── sources/
-│   │   ├── registry.py      # 来源注册表加载器（运行时）
-│   │   └── validation.py    # source_refs 运行时校验（4条规则）
-│   ├── physics/
-│   │   ├── analytic.py      # 解析求解器（free_fall / projectile / collision）
-│   │   ├── dispatcher.py    # 求解器路由 + dispatch_with_validation()
-│   │   └── engine.py        # PyBullet 封装（数值积分，无隐式地面）
-│   ├── templates/
-│   │   ├── extractor.py     # 自然语言参数提取（正则，模板优先路径）
-│   │   ├── free_fall.py     # free_fall 场景模板
-│   │   ├── projectile.py    # projectile 场景模板（v0.2 新增）
-│   │   └── collision.py     # collision 场景模板（v0.2 新增）
-│   ├── validation/
-│   │   └── runner.py        # ValidationTarget 自动执行
-│   ├── explorer/
-│   │   ├── __init__.py      # exploration mode 入口（预留）
-│   │   └── placeholder.py   # 结构化 explorer 占位结果协议
-│   └── llm/
-│       └── translator.py    # 模板优先路径 + Ollama LLM fallback
+│   ├── schema/                  # PSDL 数据模型（含时空字段）
+│   ├── physics/                 # 公理执行引擎（解析/PyBullet）
+│   ├── llm/                     # 自然语言翻译/解释
+│   ├── problem_semantic/        # 时空语义提取（ProblemSemanticSpec）
+│   ├── capabilities/            # 公理封装（CapabilitySpec）
+│   ├── planning/                # 事件解析、演化调度、执行计划
+│   │   ├── events.py            # 事件与触发条件（待定）
+│   │   ├── scheduler.py         # 调度器（待定）
+│   │   └── execution_plan.py    # 执行计划（已有基础）
+│   └── spacetime/               # 时空数据结构（待扩展）
 ├── tests/
-│   ├── test_free_fall.py             # 三层验证：解析/模板/PyBullet
-│   ├── test_schema.py                # PSDL v0.1 字段与 ValidationTarget
-│   ├── test_units.py                 # 量纲/单位框架
-│   ├── test_dispatcher.py            # 求解器路由
-│   ├── test_classifier.py            # 场景分类器
-│   ├── test_sources.py               # 来源注册表结构
-│   ├── test_validation_runner.py     # ValidationTarget 执行
-│   ├── test_validation_metrics.py    # derived metrics: max_height / range / time_of_flight
-│   ├── test_pipeline_integration.py  # 模板优先编译路径集成测试（v0.2）
-│   ├── test_source_registry_validation.py  # 来源运行时校验测试（v0.2）
-│   ├── test_projectile_template.py   # projectile 模板与解析器（v0.2）
-│   └── test_collision_template.py    # collision 模板与解析器（v0.2）
 └── examples/
-    └── questions.txt        # 示例问题文件
-```
+________________________________________
+扩展与定制
+添加新公理（如空气阻力）
+1.	定义公理的时空适用范围：在 CapabilitySpec 中填写 applicability_conditions（如“速度>0的区域”）。
+2.	指定控制模式：并行（与重力叠加）或条件触发（速度阈值）。
+3.	在 physics/engine.py 的 step 中实现力叠加。
+4.	更新 LLM 提示，让系统能从自然语言中提取阻力系数。
+自定义时空触发条件
+1.	在 planning/events.py 中定义新事件类，实现 condition(state, t) 谓词。
+2.	将事件注册到调度器，指定当条件满足时调用的公理。
+调整调度策略
+修改 scheduler.py 中的 build_execution_graph 方法，可支持：
+•	基于优先级的调度
+•	时间步长自适应
+•	事件驱动的动态重排
+________________________________________
+已知当前限制
+限制	时空相关影响
+仅支持球形粒子	无法处理旋转时空中的角动量
+边界仅 AABB	无法处理复杂几何区域（如斜板、曲面）
+无流体/柔性体	时空区域不能有连续介质
+时间步长固定	无法精确捕捉事件时刻（如恰好触地）
+并行公理未实现	无法处理多力同时作用的时空叠加
+________________________________________
+贡献与许可
+贡献指南
+•	代码符合 PEP 8。
+•	新功能需包含单元测试（tests/ 目录）。
+•	如果添加新公理，请同步更新本 README 中的“公理与时空条件映射”表格。
+•	提交前运行 pytest tests/。
+许可证
+Apache 2.0。详见 LICENSE 文件。
+致谢
+•	DeepSeek 提供开源模型
+•	Ollama 简化本地部署
+•	PyBullet 提供可靠的物理模拟引擎
 
----
-
-## PSDL v0.1 关键特性
-
-### 新增字段
-
-| 字段 | 说明 |
-|------|------|
-| `schema_version` | 契约版本（当前 `"0.1"`） |
-| `scenario_type` | 场景分类（`"free_fall"`, `"projectile"`, `"collision"`），驱动求解器路由 |
-| `assumptions` | 显式建模假设（如 `"no air resistance"`, `"point mass"`） |
-| `source_refs` | 教材/题目出处引用（受 source registry 治理） |
-| `validation_targets` | 预计算的金标期望值，供执行层自动验证 |
-| `world.ground_plane` | 地面必须**显式**声明；执行层不再隐式添加 |
-
-### 量纲/单位框架（units.py）
-
-```python
-from src.schema.units import Dimension, validate_unit_for_dimension
-
-validate_unit_for_dimension("m/s^2", Dimension.acceleration)  # OK
-validate_unit_for_dimension("kg",    Dimension.length)         # → DimensionError
-validate_unit_for_dimension("mph",   Dimension.velocity)       # → UnknownUnitError
-```
-
----
-
-## 模板优先编译路径（v0.2）
-
-当前支持的 `scenario_type` 及对应模板优先路径：
-
-| `scenario_type` | 模板文件 | 参数提取器 | 解析求解器 |
-|-----------------|----------|-----------|-----------|
-| `"free_fall"` | `templates/free_fall.py` | `extractor.extract_free_fall_params()` | `analytic.solve_free_fall()` |
-| `"projectile"` | `templates/projectile.py` | `extractor.extract_projectile_params()` | `analytic.solve_projectile()` |
-| `"collision"` | `templates/collision.py` | `extractor.extract_collision_params()` | `analytic.solve_collision_1d_elastic()` |
-
-**工作流程**：
-1. `classify_scenario()` 用正则规则识别场景类型（中文 + 英文）
-2. 对应 extractor 尝试从自然语言中提取数值参数
-3. 若提取成功 → 直接构建 PSDL 模板（**不调用 LLM**）
-4. 若提取失败 → fallback 到 Ollama LLM 路径
-
-**Fallback 场景**：
-- 问题中无法提取关键参数（如高度、速度等）
-- 识别结果为 `None`（未知题型）
-- 所有其他非支持场景（optics、EM 等）
-
----
-
-## 求解器策略（v0.2）
-
-| `scenario_type` | 求解器 | 误差 |
-|-----------------|--------|------|
-| `"free_fall"` | `analytic.solve_free_fall()` | 浮点精度（< 1e-9） |
-| `"projectile"` | `analytic.solve_projectile()` | 浮点精度（< 1e-9） |
-| `"collision"` | `analytic.solve_collision_1d_elastic()` | 浮点精度（< 1e-9） |
-| 其他 / `None` | `engine.simulate_psdl()`（PyBullet） | ≤ 5%（半隐式 Euler） |
-
----
-
-## Source Registry 治理（v0.2）
-
-来源注册表 `data/sources/registry.yaml` 现已参与**运行时校验**（非仅文档约束）。
-
-`src/sources/validation.py` 的 `validate_source_refs()` 强制执行四条规则：
-
-1. `source_id` 必须存在于注册表
-2. 分配的 `role` 必须在该来源的 `allowed_uses` 列表中
-3. `tier: standards_only` 的来源（NIST、ITU）不得在力学场景中担任 `secondary_reference` 或内容来源角色
-4. 力学场景（`free_fall` / `projectile` / `collision`）的 `primary_template_source` 必须来自 `tier_1_authoritative`
-
-> **NIST / ITU 仍仅限 units/metrology 用途**：它们的 `allowed_uses` 只有 `units_reference` 和 `metrology_reference`，不得作为任何力学题型的模板来源。
-
----
-
-## Validation Summary（v0.2）
-
-CLI 现在始终打印 solver 路径和验证摘要：
-
-```
-[Solver: analytic_projectile]
-[Validation: 4/4 passed]
-  final_x:  PASS — observed=10.0 m, expected=10.0 m, tol=1.0%
-  final_z:  PASS — observed=0.1 m, expected=0.1 m, tol=1.0%
-  final_vx: PASS — observed=10.0 m/s, expected=10.0 m/s, tol=1.0%
-  final_vz: PASS — observed=-9.8 m/s, expected=-9.8 m/s, tol=1.0%
-```
-
-若 `validation_targets` 为空，主流程仍正常执行：
-
-```
-[Solver: pybullet]
-[Validation: no targets defined]
-```
-
----
-
-## Derived Validation Metrics（v0.3）
-
-`src/validation/runner` 现已支持一组更有物理意义的**导出量（derived metrics）**，当前优先服务 `free_fall` 和 `projectile`。
-
-### 支持的导出量
-
-| 目标名 | 物理含义 | 单位 | 量纲 |
-|--------|---------|------|------|
-| `max_height` | 运动过程中达到的最大高度（z 方向峰值） | `m` | `length` |
-| `range` | 净水平位移：x_final − x₀ | `m` | `length` |
-| `time_of_flight` | 总飞行时间：`dt × steps` | `s` | `time` |
-
-### 各场景定义
-
-**`free_fall`**：
-- `max_height` = `z₀ + v₀z² / (2g)`（若 v₀z > 0），否则 `= z₀`
-- `range` = `0.0`（纯竖直运动，无水平位移）
-- `time_of_flight` = `dt × steps`（模拟总时长）
-
-**`projectile`（水平抛）**：
-- `max_height` = `height`（v₀z = 0，初始即为最高点）
-- `range` = `v₀x × t`（水平射程）
-- `time_of_flight` = `dt × steps`（模拟总时长）
-
-### 使用方式
-
-在模板中传入 `include_derived_metrics=True`：
-
-```python
-from src.templates.free_fall import build_psdl as ff_build
-from src.templates.projectile import build_psdl as proj_build
-from src.physics.dispatcher import dispatch_with_validation
-
-# free_fall 含导出量
-psdl = ff_build(height=5.0, v0z=0.0, duration=1.0,
-                include_derived_metrics=True)
-result = dispatch_with_validation(psdl)
-# validation_results 包含 final_z, final_vz, max_height, range, time_of_flight
-
-# projectile 含导出量
-psdl = proj_build(height=10.0, v0x=15.0, duration=2.0,
-                  include_derived_metrics=True)
-result = dispatch_with_validation(psdl)
-# validation_results 包含 final_x, final_z, final_vx, final_vz,
-#                          max_height, range, time_of_flight
-```
-
-默认 `include_derived_metrics=False`，**现有路径和测试零影响**。
-
----
-
-## Exploration mode（reserved）
-
-PRISM-HJ currently reserves an exploration mode for future creative extensions such as parameter sweeps, interestingness metrics, scenario composition, and hypothesis generation. This mode is not implemented yet. Running with `--explore` currently returns and displays a structured placeholder result, and does not affect the normal deterministic simulation workflow.
-
-### exploration_config minimal schema（v0.1）
-
-`WorldSettings.exploration_config` has been upgraded from a bare `Optional[dict]` to a minimal structured model (`ExplorationConfig`). The schema is defined in `src/schema/exploration.py` and includes:
-
-- **`parameters: list[ExplorationParameter]`** — the parameter dimensions to explore (default: empty list). Each parameter requires a `name` and optionally `type`, `range`, `sampling`, and `step`.
-- **`combine_method: str | None`** — how multiple parameters are combined (reserved, e.g. `"cartesian"`).
-- **`interestingness: dict | None`** — placeholder for future interestingness-metric configuration.
-
-Structural validation is enforced at load time:
-- Each parameter `name` must be non-empty.
-- `range` (if provided) must be a 2-element list with `range[0] <= range[1]`.
-- When `sampling == "grid"` and `step` is provided, `step` must be `> 0`.
-
-This is a **contract layer only**: no real exploration algorithm is executed. The `--explore` CLI path continues to return the existing structured placeholder result unmodified.
-
----
-
-## 设计原则
-
-1. **PSDL 优先于引擎** — 物理意图在契约层完整表达，执行层只是实现细节
-2. **默认 SI** — 所有数值均为国际单位制
-3. **units 参与验证** — 单位符号不只是文档，校验失败会抛出异常
-4. **无隐式假设** — 地面、边界、阻尼等必须显式声明
-5. **LLM 仅翻译** — 不承担任何物理计算；模板优先路径减少 LLM 依赖
-6. **可信闭环优先** — 每个新功能必须有对应测试和金标验证
-7. **来源治理** — source registry 运行时强制执行，而非文档约束
-
----
-
-## 已知限制
-
-- units v0.1 仅支持 7 种基础量纲（无能量、压力、角动量等）
-- 边界形状仅支持轴对齐长方体（AABB）
-- collision 模板仅支持 1-D 弹性碰撞（两质点，沿 x 轴）
-- LLM 对模糊描述可能输出不完整的 PSDL（但会被 Pydantic + units 校验捕获）
-- 模板参数提取器（extractor.py）仅覆盖常见表述；罕见表述会 fallback 到 LLM
-
----
-
-## 贡献指南
-
-欢迎提交 Issue 和 Pull Request。请确保：
-
-1. 代码符合 **PEP 8**。
-2. 为新功能添加单元测试（`tests/` 目录）。
-3. 更新 `README.md` 与 `docs/architecture.md` 中相关部分。
-
----
-
-## 许可证
-
-本项目采用 **Apache 2.0** 许可证。详见 [LICENSE](LICENSE) 文件。
-
----
-
-## 致谢
-
-- [DeepSeek](https://deepseek.com/) 提供高性能开源模型
-- [Ollama](https://ollama.com/) 简化本地 LLM 部署
-- [PyBullet](https://pybullet.org/) 提供可靠的物理模拟
