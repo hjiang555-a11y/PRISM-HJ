@@ -13,15 +13,15 @@ from __future__ import annotations
 
 import pytest
 
-from src.physics.analytic import solve_projectile
-from src.physics.dispatcher import (
+from src.physics.legacy.analytic import solve_projectile
+from src.physics.legacy.dispatcher import (
     SOLVER_ANALYTIC_PROJECTILE,
     dispatch,
     dispatch_with_validation,
     select_solver,
 )
 from src.schema.psdl import PSDL, ParticleObject, SourceRef
-from src.physics.templates import projectile as proj_template
+from src.physics.legacy.templates import projectile as proj_template
 
 
 # ---------------------------------------------------------------------------

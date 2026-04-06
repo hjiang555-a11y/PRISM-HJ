@@ -94,13 +94,44 @@ class Scheduler:
         -------
         ExecutionResult
             包含目标量结果和触发记录的执行结果。
+
+        Admission Hints 消费逻辑（P1 新增）
+        ------------------------------------
+        Scheduler 根据 execution_plan.admission_hints 调整规则激活：
+
+        1. interaction_hints:
+           - 无 ``"gravity_present"`` → 跳过 constant_gravity 规则
+           - 无 ``"collision_possible"`` → 跳过 impulsive_collision 规则
+        2. assumption_hints:
+           - ``"inelastic_collision"`` → 设置 restitution=0.0
+           - ``"elastic_collision"``  → 设置 restitution=1.0
         """
         grav = gravity_vector if gravity_vector is not None else [0.0, 0.0, -9.8]
+
+        # --- P1: 解析 admission hints ---
+        hints = execution_plan.admission_hints
+        interaction_hints: List[str] = hints.get("interaction_hints", [])
+        assumption_hints: List[str] = hints.get("assumption_hints", [])
+
+        # 判断规则是否应被激活（hints 为空时默认全部激活以保持后向兼容）
+        _has_interaction_hints = bool(interaction_hints)
+        _gravity_enabled = (
+            not _has_interaction_hints or "gravity_present" in interaction_hints
+        )
+        _collision_enabled = (
+            not _has_interaction_hints or "collision_possible" in interaction_hints
+        )
 
         # 实例化持续规则执行器
         persistent_executors: List[tuple] = []  # (executor, applies_to, rule_inputs)
         for rule_entry in execution_plan.persistent_rule_plan:
             rule_name = rule_entry.get("rule_name", "")
+
+            # P1: 根据 hints 过滤不需要的规则
+            if rule_name == "constant_gravity" and not _gravity_enabled:
+                logger.info("hints 过滤：跳过 constant_gravity（无 gravity_present hint）")
+                continue
+
             executor_cls = _PERSISTENT_RULE_REGISTRY.get(rule_name)
             if executor_cls is None:
                 logger.warning("未知持续规则 '%s'，已跳过", rule_name)
@@ -116,11 +147,27 @@ class Scheduler:
         local_executors: List[tuple] = []  # (executor, applies_to, rule_inputs)
         for rule_entry in execution_plan.local_rule_plan:
             rule_name = rule_entry.get("rule_name", "")
+
+            # P1: 根据 hints 过滤不需要的规则
+            if rule_name == "impulsive_collision" and not _collision_enabled:
+                logger.info("hints 过滤：跳过 impulsive_collision（无 collision_possible hint）")
+                continue
+
             executor_cls = _LOCAL_RULE_REGISTRY.get(rule_name)
             if executor_cls is None:
                 logger.warning("未知局部规则 '%s'，已跳过", rule_name)
                 continue
             rule_inputs = dict(rule_entry.get("rule_execution_inputs", {}))
+
+            # P1: 根据 assumption hints 调整碰撞恢复系数
+            if rule_name == "impulsive_collision":
+                if "inelastic_collision" in assumption_hints:
+                    rule_inputs["restitution"] = 0.0
+                    logger.info("hints 参数填充：restitution=0.0（inelastic_collision hint）")
+                elif "elastic_collision" in assumption_hints:
+                    rule_inputs["restitution"] = 1.0
+                    logger.info("hints 参数填充：restitution=1.0（elastic_collision hint）")
+
             local_executors.append(
                 (executor_cls(), rule_entry.get("applies_to", []), rule_inputs)
             )
@@ -129,15 +176,18 @@ class Scheduler:
 
         # 主演化循环
         for step in range(self.steps):
-            # 1. 应用持续规则（欧拉积分）
+            # 1. 应用持续规则（更新速度 dv）
             self._apply_persistent_rules(state_set, persistent_executors)
 
-            # 2. 检查触发条件
+            # 2. 推进位置：所有实体 pos += v * dt（与规则执行分离）
+            self._advance_positions(state_set, self.dt)
+
+            # 3. 检查触发条件
             triggered = self._trigger_engine.check_triggers(
                 state_set, execution_plan.trigger_plan
             )
 
-            # 3. 激活局部规则
+            # 4. 激活局部规则
             if triggered:
                 for event in triggered:
                     self._apply_local_rules(state_set, local_executors, event, step)
@@ -159,7 +209,7 @@ class Scheduler:
         state_set: StateSet,
         executors: List[tuple],
     ) -> None:
-        """对每个实体应用所有持续规则（欧拉积分）。"""
+        """对每个实体应用所有持续规则（仅更新速度）。"""
         for executor, applies_to, rule_inputs in executors:
             entities = applies_to if applies_to else state_set.all_entity_ids()
             for entity_id in entities:
@@ -173,13 +223,24 @@ class Scheduler:
                     v = list(current.get("velocity", [0.0, 0.0, 0.0]))
                     v_new = [vi + dvi for vi, dvi in zip(v, dv)]
                     state_set.update_entity_state(entity_id, {"velocity": v_new})
-                    # 推进位置：x_new = x + v_new * dt
-                    pos = list(current.get("position", [0.0, 0.0, 0.0]))
-                    pos_new = [pi + vi * rule_inputs["dt"] for pi, vi in zip(pos, v_new)]
-                    state_set.update_entity_state(entity_id, {"position": pos_new})
                 else:
                     # 直接合并 delta（complete state update）
                     state_set.update_entity_state(entity_id, delta)
+
+    def _advance_positions(
+        self,
+        state_set: StateSet,
+        dt: float,
+    ) -> None:
+        """推进所有实体位置：x_new = x + v * dt（独立于规则执行）。"""
+        for entity_id in state_set.all_entity_ids():
+            current = state_set.get_entity_state(entity_id)
+            if current is None:
+                continue
+            pos = list(current.get("position", [0.0, 0.0, 0.0]))
+            vel = list(current.get("velocity", [0.0, 0.0, 0.0]))
+            pos_new = [pi + vi * dt for pi, vi in zip(pos, vel)]
+            state_set.update_entity_state(entity_id, {"position": pos_new})
 
     def _apply_local_rules(
         self,

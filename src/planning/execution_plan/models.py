@@ -115,3 +115,14 @@ class ExecutionPlan(BaseModel):
             "每个条目含 capability_name 和 reason 字段。"
         ),
     )
+
+    # --- Admission Hints（P1 新增：由语义层传递，供 Scheduler 消费） ---
+
+    admission_hints: Dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "来自语义层的 admission hints，供 Scheduler 在运行时决策。"
+            "键值对包括 interaction_hints、assumption_hints、query_hints 等。"
+            "Scheduler 根据 hints 调整激活的规则和参数。"
+        ),
+    )

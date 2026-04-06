@@ -257,17 +257,17 @@ class TestMechanicsConstraints:
 
 class TestTemplatePSDLsPassValidation:
     def test_free_fall_template_passes(self):
-        from src.physics.templates.free_fall import build_psdl
+        from src.physics.legacy.templates.free_fall import build_psdl
         psdl = build_psdl()
         validate_source_refs(psdl)  # Should not raise
 
     def test_projectile_template_passes(self):
-        from src.physics.templates.projectile import build_psdl
+        from src.physics.legacy.templates.projectile import build_psdl
         psdl = build_psdl()
         validate_source_refs(psdl)  # Should not raise
 
     def test_collision_template_passes(self):
-        from src.physics.templates.collision import build_psdl
+        from src.physics.legacy.templates.collision import build_psdl
         psdl = build_psdl()
         validate_source_refs(psdl)  # Should not raise
 

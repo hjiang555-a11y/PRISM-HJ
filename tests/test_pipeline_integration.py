@@ -17,7 +17,7 @@ from src.llm.translator import (
     _try_template_projectile,
     classify_scenario,
 )
-from src.physics.dispatcher import (
+from src.physics.legacy.dispatcher import (
     SOLVER_ANALYTIC_COLLISION_1D,
     SOLVER_ANALYTIC_FREE_FALL,
     SOLVER_ANALYTIC_PROJECTILE,
@@ -208,19 +208,19 @@ class TestDispatchWithValidationResult:
     """dispatch_with_validation always returns solver_used key."""
 
     def test_result_has_solver_used_key(self):
-        from src.physics.templates.free_fall import build_psdl
+        from src.physics.legacy.templates.free_fall import build_psdl
         psdl = build_psdl(height=5.0, duration=1.0)
         result = dispatch_with_validation(psdl)
         assert "solver_used" in result
 
     def test_result_has_states_key(self):
-        from src.physics.templates.free_fall import build_psdl
+        from src.physics.legacy.templates.free_fall import build_psdl
         psdl = build_psdl(height=5.0, duration=1.0)
         result = dispatch_with_validation(psdl)
         assert "states" in result
 
     def test_result_has_validation_results_key(self):
-        from src.physics.templates.free_fall import build_psdl
+        from src.physics.legacy.templates.free_fall import build_psdl
         psdl = build_psdl(height=5.0, duration=1.0)
         result = dispatch_with_validation(psdl)
         assert "validation_results" in result

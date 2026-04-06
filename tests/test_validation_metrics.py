@@ -30,9 +30,9 @@ from __future__ import annotations
 
 import pytest
 
-from src.physics.dispatcher import dispatch_with_validation
-from src.physics.templates.free_fall import build_psdl as ff_build
-from src.physics.templates.projectile import build_psdl as proj_build
+from src.physics.legacy.dispatcher import dispatch_with_validation
+from src.physics.legacy.templates.free_fall import build_psdl as ff_build
+from src.physics.legacy.templates.projectile import build_psdl as proj_build
 from src.validation.runner import _PSDL_EXTRACTORS, run_validation
 
 

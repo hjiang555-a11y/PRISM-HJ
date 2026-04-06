@@ -13,16 +13,16 @@ from __future__ import annotations
 
 import pytest
 
-from src.physics.analytic import solve_collision_1d_elastic
-from src.physics.dispatcher import (
+from src.physics.legacy.analytic import solve_collision_1d_elastic
+from src.physics.legacy.dispatcher import (
     SOLVER_ANALYTIC_COLLISION_1D,
     dispatch,
     dispatch_with_validation,
     select_solver,
 )
 from src.schema.psdl import PSDL, ParticleObject, SourceRef, WorldSettings
-from src.physics.templates import collision as col_template
-from src.physics.templates.collision import compute_final_velocities
+from src.physics.legacy.templates import collision as col_template
+from src.physics.legacy.templates.collision import compute_final_velocities
 
 
 # ---------------------------------------------------------------------------
