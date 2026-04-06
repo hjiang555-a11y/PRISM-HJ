@@ -1,6 +1,15 @@
 """
 Free-fall scenario template — v0.1.
 
+.. note::
+    **LEGACY / FROZEN** — This template exists to support legacy test fixtures
+    and the old ``text_to_psdl`` template-first path.  It is not part of the
+    new execution pipeline.
+
+    New physics logic should not be added here.  Frozen in P0; slated for
+    removal once all dependent test fixtures are ported to the new
+    architecture.
+
 :func:`build_psdl` constructs a PSDL v0.1 document for the canonical
 free-fall scenario (vertical drop from rest or with initial vertical
 velocity, no air resistance, no ground collision within the time span).

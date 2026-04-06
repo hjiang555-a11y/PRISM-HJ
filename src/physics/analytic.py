@@ -1,6 +1,22 @@
 """
 Analytic (closed-form) physics solvers — v0.2.
 
+.. note::
+    **LEGACY ANALYTIC REFERENCE** — These solvers provide *exact* closed-form
+    results and serve as the golden reference for regression testing.
+
+    Physics equivalents in the new execution layer:
+
+    * ``solve_free_fall`` / ``solve_projectile`` →
+      :class:`~src.execution.rules.persistent.gravity.ConstantGravityRule`
+      (Euler time-stepping; same physics, approximate integration).
+    * ``solve_collision_1d_elastic`` →
+      :class:`~src.execution.rules.local.impulsive_collision.ImpulsiveCollisionRule`
+      with ``restitution=1.0``.
+
+    Frozen in P0.  Keep until the new execution layer achieves verified
+    equivalent precision for all covered scenario classes.
+
 These solvers return *exact* results (subject to floating-point precision)
 for scenarios where kinematic equations have a closed-form solution.
 They are the preferred execution path whenever the dispatcher matches a

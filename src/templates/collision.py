@@ -1,6 +1,19 @@
 """
 Collision scenario template — v0.1.
 
+.. note::
+    **LEGACY / FROZEN** — This template exists to support legacy test fixtures
+    and the old ``text_to_psdl`` template-first path.  It is not part of the
+    new execution pipeline.
+
+    ``compute_final_velocities`` here handles the **perfectly-inelastic** case
+    (``e=0``) which is not yet covered by the new
+    :class:`~src.execution.rules.local.impulsive_collision.ImpulsiveCollisionRule`.
+    That knowledge gap is tracked as a P0 tail item.
+
+    Frozen in P0; slated for removal once all dependent test fixtures are
+    ported to the new architecture.
+
 :func:`build_psdl` constructs a PSDL v0.1 document for a 1-D two-particle
 collision (elastic or perfectly inelastic).
 

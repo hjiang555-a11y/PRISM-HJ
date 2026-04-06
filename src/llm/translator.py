@@ -1,6 +1,17 @@
 """
 LLM translator: natural language → PSDL (via Ollama).
 
+.. warning::
+    **LEGACY / FROZEN** — This module is part of the old NL→PSDL→Dispatcher
+    pipeline and is frozen in P0.  It is not the new mainline entry point.
+
+    New mainline: ``extract_problem_semantics → build_capability_specs →
+    build_execution_plan → Scheduler.run``.
+
+    ``text_to_psdl`` and the template-first path here will be superseded once
+    the new pipeline is complete.  ``classify_scenario`` retains value as a
+    lightweight pattern matcher and may be reused in the new NL layer.
+
 This module is the only place that communicates with the Ollama HTTP API.
 It does **not** perform any physics computations.
 
@@ -183,7 +194,7 @@ def text_to_psdl(user_query: str) -> PSDL:
 def _try_template_free_fall(user_query: str) -> Optional[PSDL]:
     """Return a free_fall PSDL built from the template, or ``None``."""
     try:
-        from src.templates.extractor import extract_free_fall_params
+        from src.problem_semantic.extraction.extractors import extract_free_fall_params
         from src.templates.free_fall import build_psdl as build_free_fall
 
         params = extract_free_fall_params(user_query)
@@ -198,7 +209,7 @@ def _try_template_free_fall(user_query: str) -> Optional[PSDL]:
 def _try_template_projectile(user_query: str) -> Optional[PSDL]:
     """Return a projectile PSDL built from the template, or ``None``."""
     try:
-        from src.templates.extractor import extract_projectile_params
+        from src.problem_semantic.extraction.extractors import extract_projectile_params
         from src.templates.projectile import build_psdl as build_projectile
 
         params = extract_projectile_params(user_query)
@@ -213,7 +224,7 @@ def _try_template_projectile(user_query: str) -> Optional[PSDL]:
 def _try_template_collision(user_query: str) -> Optional[PSDL]:
     """Return a collision PSDL built from the template, or ``None``."""
     try:
-        from src.templates.extractor import extract_collision_params
+        from src.problem_semantic.extraction.extractors import extract_collision_params
         from src.templates.collision import build_psdl as build_collision
 
         params = extract_collision_params(user_query)
