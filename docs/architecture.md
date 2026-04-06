@@ -8,7 +8,7 @@ PRISM-HJ（Physical Reasoning & Inference System for Mechanics — HJ）采用**
 > **架构演进说明**：项目正在从 scenario/solver-centered 架构转向 state-set and rule-oriented execution core，并在此基础上引入**三层表示体系**。以下三层均为架构级规划对象，尚非稳定代码实现：
 >
 > - **Problem Semantic Layer（问题语义层）**：解析问题输入，提取实体、关心目标（`targets_of_interest`）、显式条件及事件信息，输出 `rule_extraction_inputs` 与 `rule_execution_inputs`；对应规划对象 `ProblemSemanticSpec`。
-> - **Capability Representation Layer（能力表示层）**：针对候选能力族生成能力表示，显式携带 `rule_extraction_inputs` 与 `rule_execution_inputs`；对应规划对象 `CapabilitySpec`。
+> - **Capability Representation Layer（能力表示层）**：针对候选能力族生成能力表示，显式携带 `rule_extraction_inputs` 与 `rule_execution_inputs`；对应规划对象 `CapabilitySpec`。每个 `CapabilitySpec` 必须声明 `applicability_conditions`（适用条件）、`assumptions`（物理假设）、`validity_limits`（有效边界），以防止 capability 设计滑向个例字段堆积。
 > - **Execution Plan Layer（执行计划层）**：将各能力表示整合为统一执行计划，驱动规则驱动演化与 Result Assembly；对应规划对象 `ExecutionPlan`。
 >
 > **现阶段核心主线**：事件提取路径——事件如何表示、`rule_extraction_inputs` 与 `rule_execution_inputs` 如何准备——是当前最小闭环的关键路径。跨领域扩展（cross-domain rule composition）仅作为未来方向保留。
@@ -20,6 +20,7 @@ PRISM-HJ（Physical Reasoning & Inference System for Mechanics — HJ）采用**
 > - [新执行核心接口草案 v0.1](PRISM_execution_core_interfaces_v0_1.md)
 > - [分层表示架构决议（草案）](PRISM_representation_layers_architecture_decision.md)
 > - [事件提取最小输出契约 v0.1](PRISM_event_extraction_minimum_contract_v0_1.md)
+> - [能力适用条件与入口要素约定 v0.1](PRISM_capability_admission_conditions_and_entry_inputs_v0_1.md)
 
 ---
 

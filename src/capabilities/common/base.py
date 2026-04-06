@@ -12,8 +12,16 @@ ContactInteractionCapabilitySpec 等）均继承此基类。
 - rule_extraction_inputs: 规则提取所需依据
 - rule_execution_inputs: 规则执行所需输入
 - candidate_rules: 候选规则名称列表
-- missing_inputs: 当前缺失的输入项
+- missing_inputs: 当前缺失的输入项（对应准入约定中的 missing_entry_inputs）
 - trigger_requirements: 触发条件列表（局部规则用）
+
+准入条件字段（Capability Admission Fields）
+------------------------------------------
+- applicability_conditions: 能力适用的前提条件（定性描述）
+- assumptions: 能力工作时依赖的物理假设（含理想化条件）
+- validity_limits: 能力假设成立的有效边界
+
+详见：docs/PRISM_capability_admission_conditions_and_entry_inputs_v0_1.md
 """
 
 from __future__ import annotations
@@ -59,4 +67,29 @@ class CapabilitySpec(BaseModel):
     trigger_requirements: List[Dict[str, Any]] = Field(
         default_factory=list,
         description="触发条件描述列表（主要供局部规则使用）",
+    )
+
+    # --- 准入条件字段（Capability Admission Fields） ---
+    # 详见 docs/PRISM_capability_admission_conditions_and_entry_inputs_v0_1.md
+
+    applicability_conditions: List[str] = Field(
+        default_factory=list,
+        description=(
+            "能力适用的前提条件（定性描述）。"
+            "描述能力可被激活的物理情境前提，如'实体可建模为质点'。"
+        ),
+    )
+    assumptions: List[str] = Field(
+        default_factory=list,
+        description=(
+            "能力工作时依赖的物理假设（含理想化条件）。"
+            "如'重力加速度恒定'、'忽略空气阻力'、'质点近似'。"
+        ),
+    )
+    validity_limits: List[str] = Field(
+        default_factory=list,
+        description=(
+            "能力假设成立的有效边界（定性描述）。"
+            "如'非相对论性低速范围'、'碰撞时间远小于整体运动时间尺度'。"
+        ),
     )

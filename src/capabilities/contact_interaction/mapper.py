@@ -66,6 +66,26 @@ def build_contact_interaction_spec(
 
     missing: list = list(problem_spec.unresolved_items)
 
+    # 准入条件字段（Capability Admission Fields）
+    # 详见 docs/PRISM_capability_admission_conditions_and_entry_inputs_v0_1.md
+    applicability_conditions = [
+        "问题中存在两个或以上可识别的物理实体",
+        "存在可识别的接触或碰撞事件",
+        "交互可以用有限时刻的冲量近似描述（碰撞过程远短于整体运动时间尺度）",
+    ]
+    assumptions = [
+        "碰撞为完全瞬时冲击（碰撞时间 Δt → 0，冲量-动量定理适用）",
+        "默认弹性碰撞（动能守恒），除非 contact_model_hints 中指定非弹性类型",
+        "碰撞期间外力（如重力）的冲量相对碰撞冲量可忽略",
+        "刚体近似：碰撞过程中实体不发生形变",
+    ]
+    validity_limits = [
+        "碰撞持续时间远小于整体运动时间尺度",
+        "实体间不发生持续接触（持续接触力需引入不同 capability）",
+        "刚体近似在碰撞速度和材料特性下成立",
+        "仅适用于两体直接接触碰撞；多体同时碰撞需显式扩展 contact_pairs",
+    ]
+
     return ContactInteractionCapabilitySpec(
         applies_to_entities=entity_ids,
         target_mapping={t.get("name", ""): t for t in problem_spec.targets_of_interest},
@@ -77,4 +97,7 @@ def build_contact_interaction_spec(
         contact_pairs=contact_pairs,
         contact_model_hints=contact_hints,
         pre_trigger_state_requirements=pre_trigger,
+        applicability_conditions=applicability_conditions,
+        assumptions=assumptions,
+        validity_limits=validity_limits,
     )
