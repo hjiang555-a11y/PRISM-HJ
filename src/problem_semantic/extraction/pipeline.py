@@ -35,8 +35,12 @@ def _extract_entity_model_hints(text: str) -> list[str]:
     lower = text.lower()
     hints: list[str] = []
 
-    # 刚体线索（优先于质点）
-    if re.search(r"刚体|rigid\s*body|转动|旋转|rotation|moment\s*of\s*inertia", lower):
+    # 刚体线索（优先于质点；包含旋转动力学相关关键词）
+    _rigid_body_pattern = (
+        r"刚体|rigid\s*body|转动|旋转|rotation|moment\s*of\s*inertia"
+        r"|angular|转动惯量|角速度|angular\s*velocity"
+    )
+    if re.search(_rigid_body_pattern, lower):
         hints.append("rigid_body")
     # 质点线索（含球、石、物体等通用词且无刚体旋转线索）
     elif re.search(
@@ -45,9 +49,6 @@ def _extract_entity_model_hints(text: str) -> list[str]:
         lower,
     ):
         hints.append("point_mass")
-    # 带有明显旋转描述但无"刚体"关键词时也提示 rigid_body
-    elif re.search(r"angular|转动惯量|角速度|angular\s*velocity", lower):
-        hints.append("rigid_body")
 
     return hints
 
@@ -119,8 +120,8 @@ def _extract_assumption_hints(text: str) -> list[str]:
     if re.search(r"光滑|smooth|无摩擦|frictionless", lower):
         hints.append("smooth_surface")
 
-    # 恒定重力（在重力场景中显式提及 g 恒定，或使用标准 g 值）
-    if re.search(r"g\s*=\s*9\.8|g\s*=\s*10|重力加速度恒定|constant\s*g|constant\s*gravity", lower):
+    # 恒定重力（显式提及 g 值，或使用标准 g 值表达）
+    if re.search(r"g\s*=\s*\d+(?:\.\d+)?|重力加速度恒定|constant\s*g|constant\s*gravity", lower):
         hints.append("constant_g")
 
     return hints

@@ -215,7 +215,7 @@ class TestMapperConsumesSemanticHints:
         assert cap.contact_model_hints == ["elastic"]
 
     def test_assumption_hints_override_rule_extraction_inputs(self):
-        """assumption_hints（A 层）优先于 rule_extraction_inputs（B 层）。"""
+        """assumption_hints（A 层）优先于 rule_extraction_inputs（B 层）：A 层有值时 B 层不被检查。"""
         spec = ProblemSemanticSpec(
             source_input="test",
             entities=[{"name": "a"}, {"name": "b"}],

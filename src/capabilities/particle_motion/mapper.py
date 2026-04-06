@@ -112,10 +112,8 @@ def build_particle_motion_spec(
         missing_entry.append("initial_position_per_entity")
 
     # --- 初始速度 ---
-    # A. 语义层：assumption_hints 中有速度相关假设（如自由落体默认 v0=0）
-    #    如果 interaction_hints 含 gravity_present 且 query_hints 含 ask_state_at_time
-    #    则认为速度条件很可能在问题中有描述，但我们不能盲目 admit；此处仅降低 B 优先级
-    _has_velocity_from_semantics = False  # 语义层暂不直接推断速度已知
+    # A. 语义层：当前语义层尚无直接"速度已知"的结构化 hint，留待后续扩展
+    _has_velocity_from_semantics = False
     # B. 显式条件关键词
     _velocity_keywords = {"velocity", "speed", "v", "vx", "vy", "vz", "initial_velocity", "v0", "v0x", "v0y"}
     _has_velocity_from_conditions = bool(_velocity_keywords & condition_names)

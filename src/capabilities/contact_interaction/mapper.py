@@ -81,6 +81,8 @@ def build_contact_interaction_spec(
     # ------------------------------------------------------------------
 
     # A. 语义层：来自 assumption_hints（extraction pipeline 推断）
+    # 注：inelastic 优先于 elastic（inelastic 是更强的约束）；
+    #     若 assumption_hints 同时含两者（异常情况），以 inelastic 为准
     contact_hints: list = []
     if "inelastic_collision" in problem_spec.assumption_hints:
         contact_hints.append("inelastic")
